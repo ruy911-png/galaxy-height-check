@@ -10,13 +10,13 @@
 - 카메라 영상·사용자 사진·실측 좌표는 업로드하지 않습니다. 런타임 서버 API·DB·로그인·광고·유료 측정 API도 없습니다.
 - GitHub Free 공개 저장소와 기본 Pages 도메인을 사용하는 정적 호스팅 비용은 0원입니다. 유료 도메인·유료 러너는 사용하지 않습니다.
 
-## v0.2.2 완료와 검증 근거
+## v0.2.3 완료와 검증 근거
 
-- [Pages 배포 작업](https://github.com/ruy911-png/galaxy-height-check/actions/runs/42354696142): 완료, 성공.
-- 게시 브랜치: `gh-pages`, 게시 커밋: `3e9a12815d65f699a9a11280a9424a647a5579ba`.
+- [Pages 배포 작업](https://github.com/ruy911-png/galaxy-height-check/actions/runs/42356328291): 완료, 성공.
+- 게시 브랜치: `gh-pages`, 게시 커밋: `c0a609277ba70979a879866ee1482825d2d7d93c`.
 - 공개 HTTPS의 HTML·JS·CSS 응답 200을 확인했고, 실제 응답 파일이 로컬 빌드와 SHA-256 기준으로 일치했습니다.
 - 실제 Chromium에서 네 화면 폭의 공개 페이지 검사와 별도 모의 카메라 거부 검사, 총 5건이 통과했습니다. 실제 휴대폰 AR·높이 정확도 검증은 아닙니다.
-- 타입 검사·프로덕션 빌드·자동 검사 75개가 통과했습니다. 상세 결과는 [검증 기록](verification.md)에 있습니다.
+- 타입 검사·프로덕션 빌드·자동 검사 95개가 통과했습니다. 상세 결과는 [검증 기록](verification.md)에 있습니다.
 
 ## 권한 제한의 의미
 
@@ -26,7 +26,7 @@ GitHub 연결 앱은 승인된 저장소의 소스·정적 파일 푸시를 수�
 
 ## 호스팅 설정과 남은 확인
 
-Vite의 `base: './'`와 `public/.nojekyll`을 사용합니다. `public/_headers`는 Cloudflare Pages·Netlify용 파일이며 GitHub Pages에서는 적용되지 않습니다. 실제 공개 페이지의 보안 문맥과 리소스 로드는 확인했습니다. WebXR은 HTTPS 최상위 페이지에서 실행하며, 사용자는 실제 앱에서 초록 원을 확인했지만 바닥 지정 실패를 보고했습니다. 수정 후 바닥·천장 지정은 갤럭시 Chrome에서 재확인해야 합니다.
+Vite의 `base: './'`와 `public/.nojekyll`을 사용합니다. `public/_headers`는 Cloudflare Pages·Netlify용 파일이며 GitHub Pages에서는 적용되지 않습니다. 실제 공개 페이지의 보안 문맥과 리소스 로드는 확인했습니다. WebXR은 HTTPS 최상위 페이지에서 실행하며, 사용자 사진에서 바닥 지정 후 천장 단계 진입을 확인했습니다. 천장은 아직 기울어진 면으로 판단되어 지정되지 않았으므로 실제 갤럭시 Chrome에서 확인이 필요합니다.
 
 초기 내부 미리보기와 Cloudflare Quick Tunnel 연결을 사용할 수 없어 해당 경로는 채택하지 않았습니다. Cloudflare 사이트는 생성하지 않았습니다. 휴대폰에는 localhost가 아닌 위 공개 HTTPS 주소를 안내합니다.
 
