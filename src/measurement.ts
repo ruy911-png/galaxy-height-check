@@ -115,11 +115,11 @@ export class HeightMeasurement {
   }
 
   canConfirm(hit: MeasurementHit | null, now: number): boolean {
-    return this.rejectionReason(hit, now) === null;
+    return this.getRejectionReason(hit, now) === null;
   }
 
   confirm(hit: MeasurementHit | null, now: number): Confirmation {
-    const reason = this.rejectionReason(hit, now);
+    const reason = this.getRejectionReason(hit, now);
     if (reason) {
       if (reason === 'coordinate-space-changed') this.invalidate();
       return { ok: false, reason };
@@ -154,7 +154,8 @@ export class HeightMeasurement {
     this.reset();
   }
 
-  private rejectionReason(hit: MeasurementHit | null, now: number): MeasurementFailureReason | null {
+  /** Read-only explanation uses exactly the same rules as confirmation. */
+  getRejectionReason(hit: MeasurementHit | null, now: number): MeasurementFailureReason | null {
     if (this.state.step === 'result') return 'already-complete';
     if (!hit) return 'no-hit';
     if (!validHit(hit) || !Number.isFinite(now) || now < 0) return 'invalid-hit';

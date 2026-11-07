@@ -107,6 +107,17 @@ footer p { margin: 6px 0 0; }
 .xr-panel small { display: block; text-align: center; margin-top: 13px; }
 .xr-panel .primary-button:disabled { opacity: 1; background: #d7ddce; color: #60715a; }
 .xr-skip { display: block; margin: 8px auto -4px; padding: 12px 5px; min-height: 44px; font-size: 12px; border: none; background: none; color: #566c4d; text-decoration: underline; text-underline-offset: 3px; }
+/* Keep the aiming point clear and reserve the lower screen for Android's
+   transient fullscreen notice and navigation controls. Guidance cannot push
+   the action button down, even when an error message wraps. */
+.measurement-guide { position: absolute; top: calc(max(16px, env(safe-area-inset-top)) + 56px); left: 16px; right: 16px; max-width: 480px; margin: 0 auto; max-height: calc(50% - 100px); overflow-y: auto; pointer-events: auto; border-radius: 16px; padding: 14px 16px; color: #234936; background: #fffef8f5; }
+.measurement-guide .eyebrow { margin-bottom: 6px; font-size: 11px; }
+.measurement-guide h2 { font-size: 18px; line-height: 1.4; }
+.measurement-guide [role="status"] { margin: 8px 0 0; font-size: 13px; line-height: 1.6; word-break: keep-all; }
+.measurement-overlay .measurement-actions { position: absolute; left: 16px; right: 16px; bottom: max(112px, calc(env(safe-area-inset-bottom) + 96px)); margin: 0 auto; padding: 12px; width: auto; max-width: 440px; border-radius: 16px; }
+.measurement-actions .measurement-ready { margin: 0 0 8px; text-align: center; font-size: 12px; line-height: 1.4; }
+.measurement-actions .measurement-ready.is-ready { color: #1b6042; font-weight: 700; }
+.measurement-actions .primary-button { min-height: 60px; font-size: 18px; }
 @media (max-width: 650px) {
   .app-shell { max-width: 510px; padding: 0 20px; }
   .header { padding: 22px 0; }
@@ -138,4 +149,11 @@ footer p { margin: 6px 0 0; }
   .xr-panel .xr-small, .xr-panel small, .xr-panel .eyebrow { display: none; }
   .xr-panel h2 { font-size: 16px; }
   .xr-panel p { margin: 6px 0; }
+  .measurement-overlay .measurement-actions { bottom: max(72px, calc(env(safe-area-inset-bottom) + 64px)); max-width: 360px; padding: 10px; }
+  .measurement-actions .primary-button { min-height: 52px; padding: 10px 16px; }
+  .measurement-actions .measurement-ready { margin: 0 0 6px; font-size: 11px; }
+  .measurement-guide { top: calc(max(12px, env(safe-area-inset-top)) + 50px); padding: 10px 14px; max-height: calc(50% - 85px); }
+  .measurement-guide .eyebrow { display: none; }
+  .measurement-guide h2 { font-size: 16px; }
+  .measurement-guide [role="status"] { margin-top: 4px; font-size: 12px; }
 }

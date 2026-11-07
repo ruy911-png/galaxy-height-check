@@ -175,7 +175,7 @@ export default function App() {
   const arReady = compat.ar === 'supported';
   return <>
     <div className="app-shell">
-      <header className="header"><a href="./" className="brand" aria-label="높이 보기 처음으로"><span className="brand-icon" aria-hidden="true">↕</span> 높이 보기</a><span className="stage-pill">측정 시험용 · v0.2</span></header>
+      <header className="header"><a href="./" className="brand" aria-label="높이 보기 처음으로"><span className="brand-icon" aria-hidden="true">↕</span> 높이 보기</a><span className="stage-pill">측정 시험용 · v0.2.1</span></header>
       <main>
         <section className="hero">
           <p className="eyebrow">내 휴대폰으로, 공간의 높이를</p>
@@ -229,7 +229,7 @@ export default function App() {
           {showReport && <textarea className="report-text" aria-label="호환성 확인 기록" value={report} readOnly rows={10} />}
         </section>
       </main>
-      <footer><span>실제 높이 정확도 <b>미검증</b></span><p>측정 시험용 v0.2 · 실제 줄자와의 비교가 필요해요.</p></footer>
+      <footer><span>실제 높이 정확도 <b>미검증</b></span><p>측정 시험용 v0.2.1 · 실제 줄자와의 비교가 필요해요.</p></footer>
     </div>
 
     <div ref={hostRef} className="xr-canvas-host" aria-hidden="true" />

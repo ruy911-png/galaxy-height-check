@@ -167,6 +167,30 @@ describe('높이 측정 화면 — 테스트 먼저, 모의 WebXR', () => {
     expect(screen.queryByText('2.40 m')).toBeNull();
   });
 
+  it('초록 원이 있어도 기울어진 면이면 구체적인 차단 이유를 유지하고 유효한 바닥에서 복구한다', () => {
+    const { diagnostic } = startPanel();
+    showHit(diagnostic, sample(0, { normalY: 0.5 }));
+    expect(floorButton().disabled).toBe(true);
+    expect(screen.getByText(/기울어진 면으로 인식/)).toBeTruthy();
+    act(() => diagnostic.emit('surface'));
+    expect(screen.getByText(/기울어진 면으로 인식/)).toBeTruthy();
+    showHit(diagnostic, sample(0));
+    expect(floorButton().disabled).toBe(false);
+    expect(screen.queryByText(/기울어진 면으로 인식/)).toBeNull();
+    fireEvent.click(floorButton());
+    expect(ceilingButton()).toBeTruthy();
+  });
+
+  it('카메라보다 낮은 바닥이 아니면 기울기와 다른 이유를 표시하고 확정을 막는다', () => {
+    const { diagnostic } = startPanel();
+    showHit(diagnostic, sample(1.4));
+    expect(floorButton().disabled).toBe(true);
+    expect(screen.getByText(/휴대폰보다 낮은 바닥/)).toBeTruthy();
+    expect(screen.queryByText(/기울어진 면으로 인식/)).toBeNull();
+    fireEvent.click(floorButton());
+    expect(screen.queryByRole('button', { name: '천장 지정' })).toBeNull();
+  });
+
   it('천장으로 움직이며 표면이 잠시 안 보여도 저장한 바닥을 유지하고 현재 표면만 기다린다', async () => {
     const { diagnostic } = startPanel();
     captureFloor(diagnostic);

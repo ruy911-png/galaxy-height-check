@@ -14,8 +14,8 @@ const issues: Record<string, string> = {
   'invalid-hit': '위치 정보를 확인하지 못했어요. 표면을 다시 비춰 주세요.',
   'stale-hit': '위치 정보가 오래됐어요. 현재 표면을 다시 찾아 주세요.',
   'future-hit': '위치 정보의 시간이 맞지 않아요. AR을 종료하고 다시 시작해 주세요.',
-  'non-horizontal': '벽 대신 실제 바닥이나 천장을 비춰 주세요. 많이 기울어진 면은 지정할 수 없어요.',
-  'floor-not-below-camera': '휴대폰 아래의 실제 바닥을 비춰 주세요. 탁자나 의자는 바닥으로 지정하지 마세요.',
+  'non-horizontal': '기울어진 면으로 인식되어 지정할 수 없어요. 벽에서 떨어진 평평한 바닥이나 천장을 천천히 비춰 주세요.',
+  'floor-not-below-camera': '휴대폰보다 낮은 바닥으로 인식되지 않았어요. 휴대폰을 아래로 기울여 발을 딛는 바닥에 원을 맞춰 주세요.',
   'ceiling-not-above-camera': '휴대폰 위의 실제 천장을 비춰 주세요.',
   'ceiling-not-above-floor': '천장 지점이 바닥보다 높지 않아요. 천장을 다시 맞춰 주세요.',
   'coordinate-space-changed': '위치 기준이 바뀌어 이전 바닥을 지웠어요. 바닥부터 다시 지정해 주세요.',
@@ -105,12 +105,15 @@ export default function MeasurementPanel({ supported, blocked = false, onBeforeS
           setStep('floor');
           setMessage(issues['coordinate-space-changed']);
         }
-        const allowed = update.canConfirm && controller.current.canConfirm(hit, performance.now());
+        const reason = controller.current.getRejectionReason(hit, performance.now());
+        const allowed = update.canConfirm && reason === null;
         setCanConfirm(allowed);
-        if (update.phase === 'surface' && !allowed && !coordinateChanged && controller.current.getState().step !== 'result') {
-          setMessage(controller.current.getState().step === 'floor'
-            ? '원은 실제 바닥에 맞춰 주세요. 휴대폰 아래의 수평면이 필요해요.'
-            : '원은 실제 천장에 맞춰 주세요. 휴대폰 위의 수평면이 필요해요.');
+        if (update.phase === 'surface' && !coordinateChanged && controller.current.getState().step !== 'result') {
+          setMessage(reason ? issues[reason] : allowed
+            ? (controller.current.getState().step === 'floor'
+              ? '바닥 위치를 인식했어요. 탁자나 의자가 아닌 실제 바닥이면 아래 버튼을 누르세요.'
+              : '천장 위치를 인식했어요. 조명 기구가 아닌 실제 천장이면 아래 버튼을 누르세요.')
+            : '현재 위치를 다시 확인하고 있어요. 잠시 기다려 주세요.');
         }
       },
     });
@@ -167,15 +170,17 @@ export default function MeasurementPanel({ supported, blocked = false, onBeforeS
       {active && <>
         <div className="xr-top"><span className="xr-pill">높이 측정 · 정확도 미검증</span><button className="exit-button" aria-label="높이 측정 종료" onClick={() => void stop()}>종료 ✕</button></div>
         <div className="xr-aim" aria-hidden="true">+</div>
-        <div className="xr-panel">
+        <div className="measurement-guide">
           <p className="eyebrow">{step === 'floor' ? '01 / 바닥 지정' : step === 'ceiling' ? '02 / 천장 지정' : '03 / 측정 완료'}</p>
           <h2>{step === 'floor' ? '실제 바닥에 원을 맞춰요' : step === 'ceiling' ? '그 위 천장에 원을 맞춰요' : 'AR을 종료하고 있어요'}</h2>
-          <p role="status">{message}</p>
+          <p id="measurement-guidance" role="status">{message}</p>
+        </div>
+        <div className="xr-panel measurement-actions">
           {step !== 'result' && <>
-            <p className="xr-small">{step === 'floor' ? '탁자나 의자가 아닌, 발을 딛는 바닥을 비춰 주세요.' : '바닥 바로 위 천장을 비춰 주세요. 조명 기구는 피해주세요.'}</p>
-            <button className="primary-button" disabled={!canConfirm || closing} onClick={confirm}>{step === 'floor' ? '바닥 지정' : '천장 지정'}</button>
+            <p className={`measurement-ready ${canConfirm ? 'is-ready' : ''}`}>{canConfirm ? '● 지정할 수 있어요' : '○ 위 안내를 확인해 주세요'}</p>
+            <button className="primary-button" aria-describedby="measurement-guidance" disabled={!canConfirm || closing} onClick={confirm}>{step === 'floor' ? '바닥 지정' : '천장 지정'}</button>
           </>}
-          <small>표면이 보이지 않으면 높이값을 만들지 않아요.</small>
+          {step === 'result' && <p>측정을 마무리하고 있어요.</p>}
         </div>
       </>}
     </div>
