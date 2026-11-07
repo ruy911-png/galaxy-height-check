@@ -8,7 +8,11 @@
 
 사용자의 사진과 응답으로 **독립된 Chrome 앱에서 공식 기본 AR 예제의 실제 카메라 표시**를 확인했습니다. 사용자는 현재 야외에 있어 실내 천장 표면 인식과 높이 실측은 보류했습니다. 행성 모형이 나온 사진은 바닥·천장 인식의 증거가 아닙니다.
 
-소스와 게시 파일은 [공개 GitHub 저장소](https://github.com/ruy911-png/galaxy-height-check)에 업로드했습니다. 앱의 예정 주소는 `https://ruy911-png.github.io/galaxy-height-check/`이며, 현재 Pages 설정 활성화와 배포 확인이 남아 있습니다. 공식 예제의 성공은 자체 앱 성공이나 높이 정확도 검증이 아닙니다. [휴대폰 안내](docs/phone-check.md)는 기록과 향후 확인용입니다.
+**앱 주소: https://ruy911-png.github.io/galaxy-height-check/**
+
+무료 GitHub Pages 공개 배포를 완료했습니다. Chrome 앱을 직접 열고 위 주소를 주소창에 붙여 넣으세요. 실내에서 **높이 측정 시작 → 바닥 지정 → 천장 지정** 순서로 확인합니다. 원이 보이지 않거나 버튼이 비활성화되면 화면 안내를 따라 주세요. [휴대폰 안내](docs/phone-check.md)에 자세한 동작이 있습니다.
+
+소스는 [공개 GitHub 저장소](https://github.com/ruy911-png/galaxy-height-check)에 있습니다. HTTPS 응답과 실제 Chromium의 공개 화면 검사는 통과했지만, 자체 앱의 실제 Galaxy AR 실행과 높이 정확도는 아직 미검증입니다.
 
 코드 작성·설치·테스트는 담당 에이전트가 처리합니다. 사용자는 코드를 실행할 필요가 없습니다.
 
@@ -41,7 +45,7 @@ npm run dev
 
 `npm run dev`가 표시하는 localhost 주소는 해당 컴퓨터의 개발용입니다. 휴대폰에서 컴퓨터의 일반 `http://192.168…` 주소를 여는 방식은 WebXR의 보안 조건을 충족하지 않습니다. 휴대폰이 신뢰하는 HTTPS 주소로 **최상위 페이지에서 직접** 열어야 합니다. iframe 미리보기는 권한 정책에 따라 거절될 수 있습니다.
 
-프로덕션 파일은 `dist/`에 생성됩니다. HTTPS 정적 호스팅만 필요하며 서버 연산이나 비밀 키는 필요 없습니다. GitHub의 `main`에는 소스, `gh-pages`에는 검증한 정적 빌드가 있습니다. `public/_headers`는 Cloudflare Pages·Netlify 형식이며 GitHub Pages에는 적용되지 않습니다. 앱은 HTTPS 최상위 페이지에서 실행하며 실제 호스트의 응답·카메라 동작은 별도로 확인합니다.
+프로덕션 파일은 `dist/`에 생성됩니다. HTTPS 정적 호스팅만 필요하며 서버 연산이나 비밀 키는 필요 없습니다. GitHub의 `main`에는 소스, `gh-pages`에는 검증한 정적 빌드가 있습니다. `public/_headers`는 Cloudflare Pages·Netlify 형식이며 GitHub Pages에는 적용되지 않습니다. 공개 HTTPS 응답은 확인했고 실제 휴대폰 카메라·AR 동작은 별도로 확인해야 합니다.
 
 ## 참고 자료와 검증 기록
 
@@ -49,7 +53,7 @@ npm run dev
 - [검증 결과와 남은 항목](docs/verification.md)
 - [TDD의 실패 → 구현 → 통과 기록](docs/tdd-log.md)
 - [실내 5회 측정 기록표](docs/accuracy-record.csv)와 [오차 비교 방법](docs/accuracy-check.md)
-- [무료 HTTPS 공개 계획과 현재 연결 제한](docs/https-plan.md)
+- [무료 HTTPS 배포 결과](docs/https-plan.md)
 - MIT 의존성 고지: [React](public/licenses/react.txt), [React DOM](public/licenses/react-dom.txt), [Three.js](public/licenses/three.txt)
 
 참고 저장소의 코드를 그대로 복사하지 않았습니다. `@react-three/fiber`·`@react-three/xr`는 peer 호환성을 확인했지만 이번 최소 진단에 필수적이지 않아 설치하지 않았습니다. 측정 상태와 WebXR 생명주기를 명시적으로 관리합니다. FreeRuler의 공개 소스는 가정하거나 사용하지 않았습니다.
@@ -58,9 +62,8 @@ npm run dev
 
 초기 v0.1 진단 구현은 엄밀한 TDD가 아니었습니다. v0.2 높이 측정은 테스트 작성 → 실제 실패 확인 → 구현 → 통과 확인 순서로 진행했습니다.
 
-1. 사용자 승인에 따라 GitHub Pages 공개 배포를 진행합니다. 소스·정적 파일 업로드는 완료했고 Pages 활성화와 HTTPS 검증이 남아 있습니다.
-2. 실내에서 자체 앱의 실제 바닥·천장 인식과 측정 흐름을 확인합니다. 실제 브라우저의 레이아웃·권한·WebGL 검사도 남아 있습니다.
-3. 줄자 기준 높이와 5회 반복 측정의 차이·편차·실패 횟수를 기록합니다. 실측을 받기 전 정확도는 미검증입니다.
-4. 실측 후 화면을 다듬고 결과 저장을 추가합니다. 결과 저장 기능은 아직 구현하지 않았습니다.
+1. 실내에서 자체 앱의 실제 바닥·천장 인식과 측정 흐름을 확인합니다. 공개 배포와 Chromium 화면 검사는 완료했으며 실제 휴대폰 WebXR 검사는 남아 있습니다.
+2. 줄자 기준 높이와 5회 반복 측정의 차이·편차·실패 횟수를 기록합니다. 실측을 받기 전 정확도는 미검증입니다.
+3. 실측 후 화면을 다듬고 결과 저장을 추가합니다. 결과 저장 기능은 아직 구현하지 않았습니다.
 
 사용자는 이 저장소의 소스코드 공개 커밋·푸시와 무료 GitHub Pages 공개 배포를 명시적으로 승인했습니다. 유료 서비스·결제는 사용하지 않습니다. 추가 공개 범위나 유료 작업은 별도 지시 없이 진행하지 않습니다.
