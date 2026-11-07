@@ -113,7 +113,7 @@ footer p { margin: 6px 0 0; }
   .hero { padding: 34px 0 28px; }
   .measurement-card { padding: 24px 20px; border-radius: 18px; }
   .measurement-flow { gap: 9px; }
-  .measurement-flow span { font-size: 11px; gap: 5px; }
+  .measurement-flow span { font-size: 11px; gap: 6px; flex-direction: column; white-space: nowrap; }
   .measurement-heading h2 { font-size: 18px; }
   h1 { font-size: 33px; }
   .steps { grid-template-columns: 1fr; gap: 14px; }
