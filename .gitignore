@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.cache/
+test-results/
+.vitest/
+browser-evidence/
+*.local
+.env*
