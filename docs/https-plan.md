@@ -26,9 +26,9 @@
 
 ## 승인된 경로: GitHub Pages
 
-연결된 GitHub 계정은 `ruy911-png`로 확인했습니다. 연결 도구와 GitHub CLI의 읽기 요청에서 같은 계정을 확인했습니다. 저장소 생성·커밋·푸시·Pages 설정은 아직 실행하지 않았습니다.
+연결된 GitHub 계정은 `ruy911-png`로 확인했습니다. 연결 도구와 GitHub CLI의 읽기 요청에서 같은 계정을 확인했습니다. 사용자가 공개 저장소를 생성했고, 로컬 소스·게시 커밋은 준비했습니다. 푸시·Pages 설정은 아직 실행하지 못했습니다.
 
-- 저장소 후보: `ruy911-png/galaxy-height-check`. 현재 조회는 404이므로 존재하거나 접근 가능한 저장소로 확인되지 않았습니다. 이름을 예약한 것은 아닙니다.
+- 저장소: `ruy911-png/galaxy-height-check`. 사용자 생성 완료 후 API에서 공개 저장소, 크기 0, main 기본 브랜치, 쓰기·관리 권한을 확인했습니다.
 - 배포 후 예상 주소: `https://ruy911-png.github.io/galaxy-height-check/`. 아직 작동하는 주소가 아닙니다.
 - 비용: GitHub Free의 공개 저장소와 기본 Pages 도메인을 사용하면 정적 호스팅은 0원입니다. 유료 러너·유료 도메인·서버·측정 API는 사용하지 않습니다.
 - 공개 범위: 공개 저장소의 소스코드와 게시한 웹앱 파일. 카메라 영상·사용자 사진을 저장소나 서버로 업로드하지 않습니다.
@@ -54,4 +54,4 @@ Cloudflare Quick Tunnel은 무료·계정 없이 임시 HTTPS 주소를 제공�
 - https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/
 - https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/
 
-현재 상태: GitHub Pages 공개 승인을 받아 배포 진행 중. 승인 후 저장소 생성 API를 실행했으나 GitHub가 `403 Resource not accessible by integration`을 반환했습니다. 현재 연결에는 새 저장소 생성 권한이 없어 사용자에게 GitHub 화면에서 해당 공개 저장소를 생성하도록 안내했습니다. 이는 승인 자동 심사의 거절이 아닌 GitHub 연결 권한 제한입니다. 소스·게시 커밋은 로컬에서 준비하며, 생성 확인 후 업로드와 Pages 설정을 이어갑니다. 유료 결제는 수행하지 않음.
+현재 상태: GitHub의 저장소 생성 API는 `403 Resource not accessible by integration`으로 거절됐고, 사용자가 GitHub 화면에서 해당 공개 저장소를 생성했습니다. 로컬 소스·게시 커밋은 준비했습니다. 이후 자동 승인 심사가 짧은 응답을 충분히 명확하지 않다고 판단해 푸시를 차단했습니다. 사용자에게 범위를 다시 표시했고 **‘소스코드 공개 커밋·푸시와 GitHub Pages 공개 배포를 승인합니다’**라는 명시적 답변을 받았습니다. 이 승인에 따라 업로드와 배포를 이어갑니다. 유료 결제는 수행하지 않습니다.
