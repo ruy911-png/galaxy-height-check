@@ -23,6 +23,7 @@ export default function App() {
   const [observed, setObserved] = useState({ floor: false, ceiling: false });
   const [copyMessage, setCopyMessage] = useState('');
   const [showReport, setShowReport] = useState(false);
+  const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const removeCameraListeners = useRef<() => void>(() => {});
@@ -175,7 +176,7 @@ export default function App() {
   const arReady = compat.ar === 'supported';
   return <>
     <div className="app-shell">
-      <header className="header"><a href="./" className="brand" aria-label="높이 보기 처음으로"><span className="brand-icon" aria-hidden="true">↕</span> 높이 보기</a><span className="stage-pill">측정 시험용 · v0.4.0</span></header>
+      <header className="header"><a href="./" className="brand" aria-label="높이 보기 처음으로"><span className="brand-icon" aria-hidden="true">↕</span> 높이 보기</a><span className="stage-pill">대략적인 확인용 · v0.4.1</span></header>
       <main>
         <section className="hero">
           <p className="eyebrow">내 휴대폰으로, 공간의 높이를</p>
@@ -185,7 +186,16 @@ export default function App() {
         </section>
 
         <MeasurementPanel supported={arReady} blocked={arOpen || arStopping || cameraStatus === 'opening'} onBeforeStart={() => { stopCamera(); setCameraStatus(status => status === 'opening' ? 'idle' : status); }} onActivityChange={setMeasurementActive} />
-        <p className="diagnostics-heading">잘 안 되나요? 카메라와 AR을 확인해요.</p>
+        <section className="diagnostics">
+          <button className="diagnostics-toggle" aria-expanded={diagnosticsExpanded} aria-controls="diagnostics-content" onClick={() => {
+            if (diagnosticsExpanded) {
+              stopCamera();
+              setCameraStatus(status => status === 'opening' ? 'idle' : status);
+            }
+            setDiagnosticsExpanded(!diagnosticsExpanded);
+          }}>문제가 있나요? 점검 도구<span aria-hidden="true">{diagnosticsExpanded ? '−' : '+'}</span></button>
+          <div id="diagnostics-content" hidden={!diagnosticsExpanded}>
+        <p className="diagnostics-heading">카메라나 측정이 잘 안 될 때만 확인하세요.</p>
 
         <div className="steps">
           <section className="card">
@@ -221,15 +231,17 @@ export default function App() {
           </section>
         </div>
 
-        <aside className="privacy-note"><span aria-hidden="true">◇</span><p><strong>카메라 영상은 휴대폰 안에만</strong><br />영상 업로드·광고·로그인·유료 측정 API가 없어요.</p></aside>
         <section className="help-section">
           <details><summary>지원이 안 되거나 초록 원이 안 보여요</summary><p>카카오톡 등의 앱 안에서 열었다면 링크를 복사해 <b>Chrome 주소창</b>에 붙여 넣어 주세요. Chrome과 Play 스토어의 <b>Google Play AR 서비스</b>를 업데이트해 주세요.</p><p>조명을 켜고 휴대폰을 천천히 움직여 주세요. 무늬 없는 흰 천장, 유리·거울, 어두운 곳에서는 인식이 어려울 수 있어요. 표면이 인식되지 않으면 이전 위치를 대신 사용하지 않아요.</p><p>AR 지원 응답, 카메라 성공, 실제 표면 인식, 높이 정확도는 각각 다른 확인 항목이에요.</p></details>
           <button className="secondary-button report-button" onClick={() => void copyReport()}>확인 기록 복사하기</button>
           {copyMessage && <p className="status-copy" role="status">{copyMessage}</p>}
           {showReport && <textarea className="report-text" aria-label="호환성 확인 기록" value={report} readOnly rows={10} />}
         </section>
+          </div>
+        </section>
+        <aside className="privacy-note"><span aria-hidden="true">◇</span><p><strong>카메라 영상은 휴대폰 안에만</strong><br />영상 업로드·광고·로그인·유료 측정 API가 없어요.</p></aside>
       </main>
-      <footer><span>실제 높이 정확도 <b>미검증</b></span><p>측정 시험용 v0.4.0 · 실제 줄자와의 비교가 필요해요.</p></footer>
+      <footer><span>실제 높이 정확도 <b>미검증</b></span><p>대략적인 높이 확인용 · v0.4.1</p></footer>
     </div>
 
     <div ref={hostRef} className="xr-canvas-host" aria-hidden="true" />

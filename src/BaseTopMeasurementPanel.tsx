@@ -200,7 +200,7 @@ export default function BaseTopMeasurementPanel({ supported, blocked = false, on
           <p className="base-top-note">빈방일 필요는 없어요. 침대·가구·창틀·문틀은 자동으로 구분하지 못해요. 바닥과 실제 천장 경계가 가리지 않는 벽 쪽을 고르세요.</p>
         </>}
         <button className="primary-button" disabled={!supported || blocked || active || closing} onClick={start}>높이 측정 시작</button>
-        {!supported && <p className="button-note">아래 AR 지원 확인을 먼저 살펴봐 주세요.</p>}
+        {!supported && <p className="button-note">아래 ‘문제가 있나요? 점검 도구’를 펼쳐 AR 지원 상태를 확인해 주세요.</p>}
       </>}
       <p className="measurement-status" role="status">{active ? 'AR 카메라에서 기준점과 상단을 차례로 확인하고 있어요.' : result ? '측정 완료 · 정확도 미검증' : message}</p>
     </section>

@@ -33,6 +33,11 @@ h1 { font-size: clamp(30px, 5vw, 43px); line-height: 1.28; letter-spacing: -1.8p
 .measurement-card > .primary-button { max-width: 440px; margin: 0 auto; min-height: 58px; }
 .measurement-status { font-size: 11px; color: #73806b; text-align: center; margin: 13px 0 0; line-height: 1.7; word-break: keep-all; }
 .diagnostics-heading { font-size: 12px; font-weight: 600; color: #607459; margin: 0 2px 15px; }
+.diagnostics { margin-top: 20px; }
+.diagnostics-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 14px 18px; border: 1px solid #dce2d3; border-radius: 12px; background: transparent; color: #47634f; font-size: 13px; text-align: left; cursor: pointer; }
+.diagnostics-toggle > span { font-size: 20px; }
+#diagnostics-content { padding-top: 20px; }
+.diagnostics .help-section { margin-top: 24px; }
 .measurement-result { text-align: center; padding-top: 18px; }
 .result-label { font-size: 12px; color: #68775f; margin: 8px 0; }
 .result-meters { display: block; color: #234a34; font-size: clamp(46px, 8vw, 68px); line-height: 1.25; letter-spacing: -3px; font-weight: 700; }

@@ -78,6 +78,7 @@ const overlay = () => document.querySelector('.diagnostic-overlay')!;
 async function readyApp() {
   render(<App />);
   await screen.findByText('지원 응답 확인');
+  fireEvent.click(screen.getByRole('button', { name: '문제가 있나요? 점검 도구' }));
 }
 
 async function startAr() {
@@ -87,6 +88,47 @@ async function startAr() {
 }
 
 describe('1단계 React 사용 흐름 — 모의 하드웨어', () => {
+  it('점검 도구는 처음에 접혀 있고 측정은 펼치지 않아도 시작할 수 있다', async () => {
+    render(<App />);
+    await screen.findByText('지원 응답 확인');
+    const toggle = screen.getByRole('button', { name: '문제가 있나요? 점검 도구' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: '카메라 확인하기' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '확인 기록 복사하기' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '높이 측정 시작' }));
+    expect(screen.getByRole('button', { name: '바닥 기준점 지정' })).toBeTruthy();
+  });
+
+  it('점검 도구를 접으면 카메라를 끄고 다시 펼쳐도 자동으로 켜지 않는다', async () => {
+    const { track, stream } = cameraStream();
+    getUserMedia.mockResolvedValue(stream);
+    await readyApp();
+    fireEvent.click(screen.getByRole('button', { name: '카메라 확인하기' }));
+    await screen.findByText('카메라 켜짐 · 전송 없음');
+    const toggle = screen.getByRole('button', { name: '문제가 있나요? 점검 도구' });
+    fireEvent.click(toggle);
+    expect(track.stop).toHaveBeenCalledOnce();
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: '카메라 확인하기' })).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: '카메라 확인하기' })).toBeTruthy();
+    expect(getUserMedia).toHaveBeenCalledOnce();
+  });
+
+  it('권한 요청 중 접으면 늦게 허용된 카메라를 종료한다', async () => {
+    const pending = deferred<MediaStream>();
+    const { track, stream } = cameraStream();
+    getUserMedia.mockReturnValue(pending.promise);
+    await readyApp();
+    fireEvent.click(screen.getByRole('button', { name: '카메라 확인하기' }));
+    fireEvent.click(screen.getByRole('button', { name: '문제가 있나요? 점검 도구' }));
+    await act(async () => { pending.resolve(stream); await pending.promise; });
+    expect(track.stop).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: '문제가 있나요? 점검 도구' }));
+    expect(screen.getByRole('button', { name: '카메라 확인하기' })).toBeTruthy();
+    expect(screen.queryByText('카메라 켜짐 · 전송 없음')).toBeNull();
+  });
   it('첫 화면은 원본처럼 기준점에서 상단으로 지정하며 한 화면 동시 인식을 요구하지 않는다', async () => {
     await readyApp();
     expect(screen.getByRole('heading', { name: '기준점에서 위로 높이 측정' })).toBeTruthy();
@@ -100,6 +142,7 @@ describe('1단계 React 사용 흐름 — 모의 하드웨어', () => {
     Object.defineProperty(navigator, 'xr', { configurable: true, value: undefined });
     render(<App />);
     await screen.findByText(/이 브라우저에는 WebXR이 없어요/);
+    fireEvent.click(screen.getByRole('button', { name: '문제가 있나요? 점검 도구' }));
     expect(arStart().disabled).toBe(true);
     expect(hardware.instances).toHaveLength(0);
     expect(screen.getByText('미검증')).toBeTruthy();
