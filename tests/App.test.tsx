@@ -28,6 +28,7 @@ vi.mock('../src/arDiagnostic', () => ({
     confirmSurface = vi.fn((): SurfaceSample | null => null);
     getCurrentHit = vi.fn(() => null);
     getCurrentPair = vi.fn(() => ({ floor: null, ceiling: null }));
+    getCurrentAimFrame = vi.fn(() => null);
   },
 }));
 
@@ -86,12 +87,13 @@ async function startAr() {
 }
 
 describe('1단계 React 사용 흐름 — 모의 하드웨어', () => {
-  it('첫 화면의 기본 측정은 한 화면 자동 계산이며 바닥·천장을 따로 지정하도록 요구하지 않는다', async () => {
+  it('첫 화면은 원본처럼 기준점에서 상단으로 지정하며 한 화면 동시 인식을 요구하지 않는다', async () => {
     await readyApp();
-    expect(screen.getByRole('heading', { name: '한 화면에서 자동 계산' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '기준점에서 위로 높이 측정' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '한 화면에서 자동 계산' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '높이 측정 시작' }));
-    expect(screen.queryByRole('button', { name: '바닥 지정' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '천장 지정' })).toBeNull();
+    expect(screen.getByRole('button', { name: '바닥 기준점 지정' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '상단 지정' })).toBeNull();
   });
 
   it('WebXR가 없으면 AR 시작을 막고 높이값을 만들어 표시하지 않는다', async () => {

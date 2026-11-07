@@ -197,3 +197,30 @@ footer p { margin: 6px 0 0; }
   .auto-result-label { font-size: 11px; }
   .auto-target-label { padding: 4px 7px; }
 }
+/* Sequential base/top measurement keeps guidance above the centre and capture
+   controls above Android's transient bottom notification. */
+.base-top-diagram { display: block; width: min(100%, 420px); height: auto; margin: 22px auto 16px; }
+.base-top-instructions { max-width: 650px; margin: 0 auto 16px; padding-left: 23px; font-size: 14px; line-height: 1.8; color: #405c45; }
+.base-top-instructions li { margin-bottom: 10px; word-break: keep-all; }
+.base-top-note { margin: 12px auto; max-width: 650px; color: #69745e; font-size: 12px; line-height: 1.8; word-break: keep-all; }
+.base-top-card > .primary-button { margin-top: 18px; }
+.base-top-source { margin: 0 0 3px; color: #376247; font-size: 13px; font-weight: 700; }
+.base-top-source.is-estimate { color: #8c621f; }
+.base-top-meters { display: inline-block; color: #214d38; font-size: 38px; line-height: 1.2; letter-spacing: -1.4px; }
+.base-top-centimeters { margin-left: 12px; color: #607354; font-size: 16px; }
+.base-top-preview { text-align: center; margin-bottom: 8px; }
+.base-top-actions .base-top-source { margin: 0 0 2px; font-size: 12px; line-height: 1.4; }
+.base-top-actions .base-top-meters { font-size: 30px; }
+.base-top-actions .base-top-centimeters { font-size: 14px; }
+.base-top-guide .base-top-estimate-note { font-size: 11px; line-height: 1.5; color: #81632b; border-top: 1px solid #dcdac5; padding-top: 7px; margin: 8px 0 0; word-break: keep-all; }
+.base-top-result .base-top-meters { font-size: 48px; }
+@media (max-height: 520px) {
+  .base-top-overlay .base-top-guide { left: 16px; right: auto; width: calc(50% - 56px); max-width: 360px; max-height: calc(100% - 146px); margin: 0; }
+  .base-top-overlay .base-top-actions { left: auto; right: 16px; width: calc(50% - 56px); max-width: 360px; bottom: max(80px, calc(env(safe-area-inset-bottom) + 72px)); margin: 0; }
+  .base-top-actions .base-top-preview { margin-bottom: 5px; }
+  .base-top-actions .base-top-meters { font-size: 25px; }
+  .base-top-actions .base-top-source { font-size: 11px; }
+  .base-top-actions .base-top-centimeters { margin-left: 7px; font-size: 13px; }
+  .base-top-actions .measurement-ready { font-size: 10px; }
+  .base-top-overlay .base-top-actions .primary-button { min-height: 52px; font-size: 16px; }
+}

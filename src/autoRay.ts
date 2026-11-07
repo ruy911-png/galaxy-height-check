@@ -1,6 +1,6 @@
 /** Viewer-space rays for the two visible guides, derived from the real XR camera. */
 type RayPoint = Required<DOMPointInit>;
-interface AutoRay { origin: RayPoint; direction: RayPoint }
+export interface AutoRay { origin: RayPoint; direction: RayPoint }
 export interface AutoRayPlan { floor: AutoRay; ceiling: AutoRay; key: string }
 
 const EPSILON = 1e-12;
@@ -90,7 +90,7 @@ function ray(inverseProjection: number[], eyeToViewer: number[], ndcY: number): 
  * can differ, so transform the eye ray through inverse(viewerPose) * viewPose.
  * Ordinary world motion must not change this source configuration.
  */
-export function createAutoRayPlan(pose: XRViewerPose): AutoRayPlan | null {
+function createRayContext(pose: XRViewerPose): { inverseProjection: number[]; eyeToViewer: number[] } | null {
   if (!pose || pose.emulatedPosition || pose.views?.length !== 1) return null;
   const view = pose.views[0];
   const projection = readMatrix(view?.projectionMatrix);
@@ -103,6 +103,19 @@ export function createAutoRayPlan(pose: XRViewerPose): AutoRayPlan | null {
   const inverseViewer = inverse(viewer);
   if (!inverseProjection || !inverseViewer) return null;
   const eyeToViewer = multiply(inverseViewer, eye);
+  return { inverseProjection, eyeToViewer };
+}
+
+/** The same real view transform, aimed at the visible screen center. */
+export function createCenterRayPlan(pose: XRViewerPose): AutoRay | null {
+  const context = createRayContext(pose);
+  return context ? ray(context.inverseProjection, context.eyeToViewer, 0) : null;
+}
+
+export function createAutoRayPlan(pose: XRViewerPose): AutoRayPlan | null {
+  const context = createRayContext(pose);
+  if (!context) return null;
+  const { inverseProjection, eyeToViewer } = context;
   const floor = ray(inverseProjection, eyeToViewer, -.6);
   const ceiling = ray(inverseProjection, eyeToViewer, .6);
   if (!floor || !ceiling) return null;
@@ -117,4 +130,12 @@ export function autoRayPlansMatch(left: AutoRayPlan, right: AutoRayPlan): boolea
     const a = left[side][kind], b = right[side][kind];
     return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) <= CONFIG_TOLERANCE;
   }));
+}
+
+/** A viewer-relative source only needs replacement when its actual ray changes. */
+export function autoRaysMatch(left: AutoRay, right: AutoRay): boolean {
+  return (['origin', 'direction'] as const).every(kind => {
+    const a = left[kind], b = right[kind];
+    return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) <= CONFIG_TOLERANCE;
+  });
 }

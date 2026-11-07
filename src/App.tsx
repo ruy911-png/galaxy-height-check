@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArDiagnostic, type ArUpdate } from './arDiagnostic';
 import { cameraErrorMessage, checkCompatibility, type Compatibility } from './compatibility';
-import MeasurementPanel from './AutoMeasurementPanel';
+import MeasurementPanel from './BaseTopMeasurementPanel';
 
 const idleAr: ArUpdate = { phase: 'idle', message: 'AR을 켠 뒤 바닥과 천장에 표면 표시가 나타나는지 확인해요.', canConfirm: false, hitCount: 0 };
 type CameraStatus = 'idle' | 'opening' | 'granted' | 'error';
@@ -175,12 +175,12 @@ export default function App() {
   const arReady = compat.ar === 'supported';
   return <>
     <div className="app-shell">
-      <header className="header"><a href="./" className="brand" aria-label="높이 보기 처음으로"><span className="brand-icon" aria-hidden="true">↕</span> 높이 보기</a><span className="stage-pill">측정 시험용 · v0.3.0</span></header>
+      <header className="header"><a href="./" className="brand" aria-label="높이 보기 처음으로"><span className="brand-icon" aria-hidden="true">↕</span> 높이 보기</a><span className="stage-pill">측정 시험용 · v0.4.0</span></header>
       <main>
         <section className="hero">
           <p className="eyebrow">내 휴대폰으로, 공간의 높이를</p>
           <h1>바닥에서 천장까지,<br />높이를 확인해요.</h1>
-          <p className="hero-copy">가리지 않는 벽 쪽으로 바닥과 천장을 한 화면에 담아요.<br />실제 높이와의 차이는 아직 검증 전이에요.</p>
+          <p className="hero-copy">바닥 기준점을 정하고, 위로 기울여 상단을 맞춰요.<br />실제 높이와의 차이는 아직 검증 전이에요.</p>
           <div className="device-chip"><span className="tiny-dot" />갤럭시 Z 폴드7 가정<span className="chip-divider">/</span>대략적인 확인용</div>
         </section>
 
@@ -229,7 +229,7 @@ export default function App() {
           {showReport && <textarea className="report-text" aria-label="호환성 확인 기록" value={report} readOnly rows={10} />}
         </section>
       </main>
-      <footer><span>실제 높이 정확도 <b>미검증</b></span><p>측정 시험용 v0.3.0 · 실제 줄자와의 비교가 필요해요.</p></footer>
+      <footer><span>실제 높이 정확도 <b>미검증</b></span><p>측정 시험용 v0.4.0 · 실제 줄자와의 비교가 필요해요.</p></footer>
     </div>
 
     <div ref={hostRef} className="xr-canvas-host" aria-hidden="true" />

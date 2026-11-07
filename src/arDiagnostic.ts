@@ -9,7 +9,8 @@ import {
 } from 'three';
 import { SurfaceGuard, type SurfaceSample } from './surfaceGuard';
 import type { MeasurementHit } from './measurement';
-import { createAutoRayPlan, autoRayPlansMatch, type AutoRayPlan } from './autoRay';
+import { createAutoRayPlan, autoRayPlansMatch, createCenterRayPlan, autoRaysMatch, type AutoRayPlan, type AutoRay } from './autoRay';
+import type { AimFrame } from './baseTopMeasurement';
 
 export type { SurfaceSample } from './surfaceGuard';
 export type ArPhase =
@@ -35,6 +36,10 @@ interface Run {
   sessionId: string;
   epoch: number;
   currentHit: MeasurementHit | null;
+  currentAim: AimFrame | null;
+  aimPlan?: AutoRay;
+  aimVersion: number;
+  aimSource?: XRHitTestSource;
   currentPair: { floor: MeasurementHit | null; ceiling: MeasurementHit | null };
   viewer?: XRReferenceSpace;
   pairPlan?: AutoRayPlan;
@@ -73,7 +78,7 @@ type Options = {
   host: HTMLDivElement;
   overlay: HTMLDivElement;
   onUpdate: (state: ArUpdate) => void;
-  measurementMode?: 'single-view';
+  measurementMode?: 'single-view' | 'base-top';
 };
 
 // Hits stay in memory, so a monotonic identity is sufficient within this page.
@@ -109,6 +114,8 @@ export class ArDiagnostic {
       sessionId: `ar-session-${++nextRunIdentity}`,
       epoch: 0,
       currentHit: null,
+      currentAim: null,
+      aimVersion: 0,
       currentPair: { floor: null, ceiling: null },
       pairVersion: 0,
       pairReconfigured: false,
@@ -218,7 +225,7 @@ export class ArDiagnostic {
         throw new DOMException('Hit testing is unavailable', 'NotSupportedError');
       }
       run.viewer = viewer;
-      if (this.options.measurementMode !== 'single-view') {
+      if (!this.options.measurementMode) {
         const source = await session.requestHitTestSource({ space: viewer, entityTypes: ['plane'] });
         if (!source) throw new Error('Missing hit-test source');
         if (run.closed) {
@@ -307,6 +314,24 @@ export class ArDiagnostic {
     return { floor: clone(run.currentPair.floor), ceiling: clone(run.currentPair.ceiling) };
   }
 
+  /** A tracked screen ray can be valid even when no real surface was hit. */
+  getCurrentAimFrame(): AimFrame | null {
+    const run = this.run;
+    if (!run || run.closed || this.options.measurementMode !== 'base-top' ||
+      run.session?.visibilityState !== 'visible' || document.hidden || !run.currentAim) return null;
+    if (!this.viewportAligned()) { this.blockViewport(run); return null; }
+    const age = performance.now() - run.currentAim.timestamp;
+    if (!Number.isFinite(age) || age < 0 || age > run.guard.maxAgeMs) {
+      this.invalidate(run, true);
+      this.publish(run, 'tracking-lost', '현재 카메라 위치가 오래됐어요. 바닥 기준점부터 다시 지정해 주세요.');
+      return null;
+    }
+    const frame = run.currentAim;
+    if (frame.sessionId !== run.sessionId || frame.epoch !== run.epoch) return null;
+    return { ...frame, origin: { ...frame.origin }, direction: { ...frame.direction },
+      hit: frame.hit ? { ...frame.hit, position: { ...frame.hit.position } } : null };
+  }
+
   private onFrame(run: Run, frame?: XRFrame): void {
     if (run.closed || this.run !== run || !frame) return;
     // Ordinary window RAF has no XRFrame. It is not a failed AR pose and must
@@ -314,7 +339,7 @@ export class ArDiagnostic {
     // frames with a missing/emulated viewer pose are still rejected below.
     const { session, renderer, scene, camera, reference, source, reticle } = run;
     if (!session || !renderer || !scene || !camera || !reference || !reticle ||
-      (this.options.measurementMode === 'single-view' ? !run.viewer : !source)) return;
+      (this.options.measurementMode ? !run.viewer : !source)) return;
 
     const now = performance.now();
     const frameGap = now - run.lastFrameAt;
@@ -344,6 +369,8 @@ export class ArDiagnostic {
       ) {
         this.invalidate(run, true);
         this.publish(run, 'tracking-lost', '휴대폰 위치를 추적하지 못했습니다. 밝고 무늬가 있는 주변을 천천히 비춰 주세요.');
+      } else if (this.options.measurementMode === 'base-top') {
+        this.readAimFrame(run, frame, viewerPose);
       } else if (this.options.measurementMode === 'single-view') {
         this.readPairFrame(run, frame, viewerPose);
       } else {
@@ -401,7 +428,100 @@ export class ArDiagnostic {
   private blockViewport(run: Run): void {
     this.invalidate(run, false);
     this.cancelPairSources(run);
+    this.cancelAimSource(run);
     this.publish(run, 'searching', '화면 확대를 원래 크기로 돌려 주세요. 표시와 카메라 위치가 맞지 않아 측정을 멈췄어요.');
+  }
+
+  private readAimFrame(run: Run, frame: XRFrame, viewerPose: XRViewerPose): void {
+    if (!this.viewportAligned()) { this.blockViewport(run); return; }
+    const plan = createCenterRayPlan(viewerPose);
+    if (!plan) {
+      this.cancelAimSource(run);
+      this.invalidate(run, true);
+      this.publish(run, 'tracking-lost', '현재 화면의 조준 방향을 확인하지 못했어요. 바닥 기준점부터 다시 지정해 주세요.');
+      return;
+    }
+    if (!run.aimPlan || !autoRaysMatch(run.aimPlan, plan)) this.configureAimSource(run, plan);
+    if (!run.aimSource) {
+      this.publish(run, 'searching', '현재 화면 중앙의 표면 인식을 준비하고 있어요.');
+      return;
+    }
+    const matrix = viewerPose.transform.matrix;
+    const transform = (p: DOMPointInit, w: number) => ({
+      x: matrix[0] * p.x! + matrix[4] * p.y! + matrix[8] * p.z! + matrix[12] * w,
+      y: matrix[1] * p.x! + matrix[5] * p.y! + matrix[9] * p.z! + matrix[13] * w,
+      z: matrix[2] * p.x! + matrix[6] * p.y! + matrix[10] * p.z! + matrix[14] * w,
+    });
+    const origin = transform(plan.origin, 1);
+    const direction = transform(plan.direction, 0);
+    const length = Math.hypot(direction.x, direction.y, direction.z);
+    if (![origin.x, origin.y, origin.z, length].every(Number.isFinite) || length <= 0) {
+      this.invalidate(run, true);
+      this.publish(run, 'tracking-lost', '카메라 방향을 추적하지 못했어요. 바닥 기준점부터 다시 지정해 주세요.');
+      return;
+    }
+    direction.x /= length; direction.y /= length; direction.z /= length;
+    const results = frame.getHitTestResults(run.aimSource);
+    let hit: MeasurementHit | null = null;
+    let hitState: AimFrame['hitState'] = results.length ? 'invalid' : 'none';
+    // An invalid nearest hit is not equivalent to no surface: callers must not
+    // estimate through it, nor silently skip to a more convenient farther hit.
+    const pose = results[0]?.getPose(run.reference!);
+    if (pose && !pose.emulatedPosition) {
+      const { x, y, z } = pose.transform.position;
+      const m = pose.transform.matrix;
+      const normalLength = Math.hypot(m[4], m[5], m[6]);
+      const normalY = m[5] / normalLength;
+      if ([x, y, z, normalLength, normalY].every(Number.isFinite) && normalLength > 0 && Math.abs(normalY) <= 1) {
+        hit = { position: { x, y, z }, normalY, viewerY: viewerPose.transform.position.y,
+          timestamp: run.lastFrameAt, sessionId: run.sessionId, epoch: run.epoch, source: 'webxr-plane-hit' };
+        hitState = 'valid';
+        run.currentHit = hit;
+        run.guard.offer(hit.position, run.lastFrameAt, run.generation);
+        run.reticle!.matrix.fromArray(m); run.reticle!.visible = true;
+        run.hits += 1;
+      }
+    }
+    run.currentAim = { origin, direction, viewerY: viewerPose.transform.position.y,
+      timestamp: run.lastFrameAt, sessionId: run.sessionId, epoch: run.epoch,
+      source: 'webxr-view-ray', hit, hitState };
+    this.publish(run, hit ? 'surface' : 'searching', hit
+      ? '현재 조준한 표면 위치를 읽고 있어요.'
+      : hitState === 'none' ? '실제 표면 신호가 없어요. 현재 카메라 방향만 읽고 있어요.'
+        : '조준한 표면 위치가 올바르지 않아요. 다른 위치를 비춰 주세요.');
+  }
+
+  private configureAimSource(run: Run, plan: AutoRay): void {
+    this.cancelAimSource(run);
+    run.aimPlan = plan;
+    const version = run.aimVersion;
+    const request = async () => {
+      try {
+        const source = await run.session!.requestHitTestSource!({
+          space: run.viewer!, entityTypes: ['plane'], offsetRay: new XRRay(plan.origin, plan.direction),
+        });
+        if (!source) throw new Error('Missing center hit-test source');
+        if (run.closed || this.run !== run || run.aimVersion !== version) {
+          try { source.cancel(); } catch { /* Native session already ended. */ }
+          return;
+        }
+        run.aimSource = source;
+      } catch (error) {
+        if (!run.closed && this.run === run && run.aimVersion === version) {
+          await this.close(run, 'error', explainError(error));
+        }
+      }
+    };
+    void request();
+  }
+
+  private cancelAimSource(run: Run): void {
+    run.aimVersion += 1;
+    run.aimPlan = undefined;
+    if (run.aimSource) {
+      try { run.aimSource.cancel(); } catch { /* Native session already ended. */ }
+      run.aimSource = undefined;
+    }
   }
 
   private readPairFrame(run: Run, frame: XRFrame, viewerPose: XRViewerPose): void {
@@ -491,6 +611,7 @@ export class ArDiagnostic {
   private invalidate(run: Run, resetCount: boolean): void {
     run.guard.clear();
     run.currentHit = null;
+    run.currentAim = null;
     run.currentPair = { floor: null, ceiling: null };
     if (run.pairReticles) {
       run.pairReticles.floor.visible = false;
@@ -513,7 +634,7 @@ export class ArDiagnostic {
     run.lastMessage = message;
     // Manual diagnostics update UI at most 10 Hz. Automatic measurement must
     // observe every frame so an intermediate bad pair resets stability.
-    if (this.options.measurementMode !== 'single-view' && !changed && now - run.lastUpdateAt < 100) return;
+    if (!this.options.measurementMode && !changed && now - run.lastUpdateAt < 100) return;
     run.lastUpdateAt = now;
     this.options.onUpdate({
       phase,
@@ -547,6 +668,7 @@ export class ArDiagnostic {
     if (run.closePromise) return run.closePromise;
     run.closed = true;
     this.cancelPairSources(run);
+    this.cancelAimSource(run);
     run.terminal ??= { phase, message };
     this.invalidate(run, true);
     run.guard.end();
@@ -595,6 +717,7 @@ export class ArDiagnostic {
     this.invalidate(run, true);
     run.guard.end();
     this.cancelPairSources(run);
+    this.cancelAimSource(run);
     if (run.timer !== undefined) clearInterval(run.timer);
     run.timer = undefined;
     for (const remove of run.removeListeners.splice(0)) remove();
