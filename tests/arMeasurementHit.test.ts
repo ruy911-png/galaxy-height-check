@@ -7,6 +7,8 @@ const threeState = vi.hoisted(() => ({
   renderers: [] as Array<{
     callback: ((time: number, frame?: XRFrame) => void) | null;
     reference: EventTarget;
+    loopRegisteredBeforeSession: boolean;
+    render: ReturnType<typeof vi.fn>;
   }>,
 }));
 
@@ -14,11 +16,12 @@ vi.mock('three', () => {
   class WebGLRenderer {
     callback: ((time: number, frame?: XRFrame) => void) | null = null;
     reference = new EventTarget();
+    loopRegisteredBeforeSession = false;
     domElement = document.createElement('canvas');
     xr = {
       enabled: false,
       setReferenceSpaceType: vi.fn(),
-      setSession: vi.fn(async () => undefined),
+      setSession: vi.fn(async () => { this.loopRegisteredBeforeSession = this.callback !== null; }),
       getReferenceSpace: () => this.reference,
     };
     constructor() { threeState.renderers.push(this); }
@@ -26,7 +29,7 @@ vi.mock('three', () => {
     setSize() {}
     setClearColor() {}
     setAnimationLoop(callback: ((time: number, frame?: XRFrame) => void) | null) { this.callback = callback; }
-    render() {}
+    render = vi.fn();
     dispose() {}
   }
   class RingGeometry {
@@ -79,6 +82,10 @@ async function setup() {
     onUpdate,
     setNow(value: number) { now = value; },
     setHidden(value: boolean) { hidden = value; document.dispatchEvent(new Event('visibilitychange')); },
+    windowFrame() {
+      // Three's regular window RAF invokes this callback without an XRFrame.
+      threeState.renderers.at(-1)!.callback!(now);
+    },
     frame(options: FrameOptions = {}) {
       const renderer = threeState.renderers.at(-1)!;
       expect(renderer.callback).not.toBeNull();
@@ -123,11 +130,64 @@ afterEach(async () => {
   for (const diagnostic of diagnostics.splice(0)) await diagnostic.stop();
   threeState.renderers.length = 0;
   vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(navigator, 'xr');
 });
 
 describe('current real-hit metadata exposed to the measurement model', () => {
+  it('registers the animation callback before attaching XR so sessionstart can stop the window loop', async () => {
+    await setup();
+    expect(threeState.renderers.at(-1)!.loopRegisteredBeforeSession).toBe(true);
+  });
+
+  it('ignores ordinary window callbacks between real XR frames without false tracking loss', async () => {
+    const { diagnostic, frame, windowFrame, setNow, onUpdate } = await setup();
+    frame();
+    const initial = diagnostic.getCurrentHit();
+    const renderer = threeState.renderers.at(-1)!;
+    renderer.render.mockClear();
+    onUpdate.mockClear();
+    setNow(1010);
+    windowFrame();
+    expect(diagnostic.getCurrentHit()).toEqual(initial);
+    expect(onUpdate).not.toHaveBeenCalled();
+    expect(renderer.render).not.toHaveBeenCalled();
+    setNow(1020);
+    frame();
+    expect(diagnostic.getCurrentHit()?.epoch).toBe(initial?.epoch);
+    expect(diagnostic.getCurrentHit()?.timestamp).toBe(1020);
+  });
+
+  it('ordinary callbacks cannot hide a gap in real XR frames when XR resumes before the watchdog', async () => {
+    const { diagnostic, frame, windowFrame, setNow, onUpdate } = await setup();
+    frame();
+    const initial = diagnostic.getCurrentHit()!;
+    for (const time of [1100, 1200, 1300]) {
+      setNow(time);
+      windowFrame();
+    }
+    onUpdate.mockClear();
+    setNow(1310);
+    frame();
+    expect(onUpdate.mock.calls.map(([update]) => update.phase)).toEqual(['tracking-lost', 'surface']);
+    expect(diagnostic.getCurrentHit()!.epoch).toBeGreaterThan(initial.epoch);
+  });
+
+  it('the watchdog still rejects an expired XR sample even if ordinary callbacks continue', async () => {
+    vi.useFakeTimers();
+    const { diagnostic, frame, windowFrame, setNow, onUpdate } = await setup();
+    frame();
+    for (const time of [1100, 1200, 1300]) {
+      setNow(time);
+      windowFrame();
+    }
+    onUpdate.mockClear();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(onUpdate.mock.calls.map(([update]) => update.phase)).toContain('tracking-lost');
+    expect(diagnostic.getCurrentHit()).toBeNull();
+  });
+
   it('returns a fresh snapshot from the same frame with plane provenance and viewer height', async () => {
     const { diagnostic, frame } = await setup();
     frame();

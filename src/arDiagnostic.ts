@@ -170,6 +170,10 @@ export class ArDiagnostic {
       run.reticle.visible = false;
       run.scene.add(run.reticle);
 
+      // Three starts its ordinary window RAF whenever setAnimationLoop receives
+      // a callback. Register BEFORE setSession so XR's sessionstart stops that
+      // window loop; registering afterward starts two competing frame sources.
+      renderer.setAnimationLoop((_time, frame) => this.onFrame(run, frame));
       run.rendererSetup = renderer.xr.setSession(session);
       await run.rendererSetup;
       if (run.closed) return;
@@ -198,7 +202,6 @@ export class ArDiagnostic {
       run.lastFrameAt = performance.now();
       this.publish(run, 'searching', '휴대폰을 천천히 움직여 표면 위에 초록 원이 나타나는지 확인해 주세요.');
 
-      renderer.setAnimationLoop((_time, frame) => this.onFrame(run, frame));
       // A stopped frame loop must not leave the final rendered hit confirmable.
       run.timer = setInterval(() => {
         if (run.closed || run.phase === 'paused') return;
@@ -252,7 +255,10 @@ export class ArDiagnostic {
   }
 
   private onFrame(run: Run, frame?: XRFrame): void {
-    if (run.closed || this.run !== run) return;
+    if (run.closed || this.run !== run || !frame) return;
+    // Ordinary window RAF has no XRFrame. It is not a failed AR pose and must
+    // neither clear a valid hit nor refresh the real-XR heartbeat. Genuine XR
+    // frames with a missing/emulated viewer pose are still rejected below.
     const { session, renderer, scene, camera, reference, source, reticle } = run;
     if (!session || !renderer || !scene || !camera || !reference || !source || !reticle) return;
 
@@ -275,9 +281,9 @@ export class ArDiagnostic {
     }
 
     try {
-      const viewerPose = frame?.getViewerPose(reference);
+      const viewerPose = frame.getViewerPose(reference);
       if (
-        !frame || !viewerPose || viewerPose.emulatedPosition ||
+        !viewerPose || viewerPose.emulatedPosition ||
         !Number.isFinite(viewerPose.transform.position.y)
       ) {
         this.invalidate(run, true);
