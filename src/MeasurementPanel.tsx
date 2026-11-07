@@ -22,6 +22,13 @@ const issues: Record<string, string> = {
   'already-complete': '측정이 끝났어요. 다시 측정을 눌러 새로 시작해 주세요.',
 };
 
+function issueMessage(reason: string, step: MeasurementStep): string {
+  if (reason === 'non-horizontal' && step === 'ceiling') {
+    return '기울어진 면으로 인식되어 지정할 수 없어요. 휴대폰을 천천히 더 위로 기울여 머리 바로 위 천장에 원을 맞춰 주세요.';
+  }
+  return issues[reason] ?? '표면을 다시 확인해 주세요.';
+}
+
 const interrupted: ArPhase[] = ['tracking-lost', 'paused', 'reset', 'error'];
 const terminal: ArPhase[] = ['ended', 'reset', 'error'];
 
@@ -109,10 +116,10 @@ export default function MeasurementPanel({ supported, blocked = false, onBeforeS
         const allowed = update.canConfirm && reason === null;
         setCanConfirm(allowed);
         if (update.phase === 'surface' && !coordinateChanged && controller.current.getState().step !== 'result') {
-          setMessage(reason ? issues[reason] : allowed
+          setMessage(reason ? issueMessage(reason, controller.current.getState().step) : allowed
             ? (controller.current.getState().step === 'floor'
-              ? '바닥 위치를 인식했어요. 탁자나 의자가 아닌 실제 바닥이면 아래 버튼을 누르세요.'
-              : '천장 위치를 인식했어요. 조명 기구가 아닌 실제 천장이면 아래 버튼을 누르세요.')
+              ? '지정 가능한 면이에요. 침대나 탁자가 아닌 실제 바닥에 원이 있는지 확인하고 누르세요.'
+              : '지정 가능한 면이에요. 가구 윗면·창틀·문틀이 아닌 실제 천장에 원이 있는지 확인하고 누르세요.')
             : '현재 위치를 다시 확인하고 있어요. 잠시 기다려 주세요.');
         }
       },
@@ -129,7 +136,7 @@ export default function MeasurementPanel({ supported, blocked = false, onBeforeS
     const outcome = controller.current.confirm(current, performance.now());
     setStep(controller.current.getState().step);
     if (!outcome.ok) {
-      setMessage(issues[outcome.reason] ?? '표면을 다시 확인해 주세요.');
+      setMessage(issueMessage(outcome.reason, controller.current.getState().step));
       setCanConfirm(controller.current.canConfirm(engine.getCurrentHit(), performance.now()));
       return;
     }
@@ -159,6 +166,7 @@ export default function MeasurementPanel({ supported, blocked = false, onBeforeS
       </div> : <>
         <div className="measurement-flow" aria-label="측정 순서"><span><b>1</b>바닥 지정</span><i aria-hidden="true">→</i><span><b>2</b>천장 지정</span><i aria-hidden="true">→</i><span><b>3</b>높이 확인</span></div>
         <p className="measurement-intro">실제 바닥과 천장에 원을 맞추고 눌러 주세요.<br />카메라 영상은 휴대폰 안에서 처리해요.</p>
+        <p className="measurement-intro">빈방일 필요는 없어요. 실제 바닥과 천장이 보이는 곳에서 사용해 주세요.<br />가구·창틀·문틀을 바닥·천장과 자동으로 구분하지 못해요.</p>
         <button className="primary-button" onClick={start} disabled={!supported || blocked || active || closing}>높이 측정 시작</button>
         {!supported && <p className="button-note">아래 AR 지원 확인을 먼저 살펴봐 주세요.</p>}
       </>}

@@ -226,3 +226,109 @@ describe('실제 hit를 받는 측정 상태 계약 — 하드웨어 검증 아�
     expect(measurement.getState().result?.meters).toBe(2.4);
   });
 });
+
+describe('침대·창가·문 주변의 실패와 복구 — 합성 평면 입력, 실제 방 인식 검증 아님', () => {
+  it('침대 윗면처럼 카메라 아래에 있는 수평면은 천장으로 확정하지 않고 실제 천장 후보에서 복구한다', () => {
+    const measurement = new HeightMeasurement();
+    recordFloor(measurement);
+    const savedFloor = measurement.getState().floor;
+    const bedTop = ceilingHit({ position: { x: 0.4, y: 0.6, z: -1 }, normalY: 1 });
+
+    expect(measurement.confirm(bedTop, 1100)).toEqual({ ok: false, reason: 'ceiling-not-above-camera' });
+    expect(measurement.getState()).toEqual({ step: 'ceiling', floor: savedFloor, result: null });
+    const recovered = measurement.confirm(ceilingHit({ timestamp: 4000 }), 4000);
+    expect(recovered.ok).toBe(true);
+    if (!recovered.ok) throw new Error('Expected recovery at a valid ceiling candidate');
+    expect(recovered.result?.meters).toBeCloseTo(2.4, 10);
+  });
+
+  it('창가의 벽·무표면·손상된 후보가 이어져도 높이를 만들지 않고 추적이 유지된 바닥을 보존한다', () => {
+    const measurement = new HeightMeasurement();
+    recordFloor(measurement);
+    const before = measurement.getState();
+    const windowPlane = ceilingHit({ position: { x: 1, y: 2, z: -1 }, normalY: 0 });
+    const invalidCandidate = ceilingHit({ position: { x: Number.NaN, y: 2.4, z: -1 }, timestamp: 1300 });
+
+    expect(measurement.confirm(windowPlane, 1100)).toEqual({ ok: false, reason: 'non-horizontal' });
+    expect(measurement.confirm(null, 1200)).toEqual({ ok: false, reason: 'no-hit' });
+    expect(measurement.confirm(invalidCandidate, 1300)).toEqual({ ok: false, reason: 'invalid-hit' });
+    expect(measurement.getState()).toEqual(before);
+    expect(measurement.confirm(ceilingHit({ timestamp: 9000 }), 9000).ok).toBe(true);
+    expect(measurement.getState().result?.centimeters).toBeCloseTo(240, 8);
+  });
+
+  it('문 옆의 수직면과 기운 면을 차례로 거부한 뒤 수평 천장에서 수직 높이만 계산한다', () => {
+    const measurement = new HeightMeasurement();
+    recordFloor(measurement);
+    const laterallyOffset = { x: 1.8, y: 2.4, z: -1 };
+    for (const normalY of [0, Math.cos(Math.PI / 4)]) {
+      const rejected = measurement.confirm(ceilingHit({ position: laterallyOffset, normalY }), 1100);
+      expect(rejected).toEqual({ ok: false, reason: 'non-horizontal' });
+      expect(measurement.getState().step).toBe('ceiling');
+      expect(measurement.getState().result).toBeNull();
+    }
+
+    const accepted = measurement.confirm(ceilingHit({ position: laterallyOffset }), 1100);
+    expect(accepted.ok).toBe(true);
+    if (!accepted.ok) throw new Error('Expected horizontal ceiling candidate');
+    expect(accepted.result?.meters).toBeCloseTo(2.4, 10);
+    expect(accepted.result?.lateralMeters).toBeCloseTo(1.8, 10);
+    expect(accepted.result?.meters).not.toBeCloseTo(3, 8);
+  });
+
+  it('천장 기울기가 허용 경계를 오가도 거부한 후보를 저장하지 않고 현재 유효한 후보만 확정한다', () => {
+    const measurement = new HeightMeasurement();
+    recordFloor(measurement);
+    const before = measurement.getState();
+    const borderlineCeiling = ceilingHit({ normalY: -horizontalLimit });
+    const outsideCeiling = ceilingHit({ normalY: -(horizontalLimit - 0.000001) });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      expect(measurement.canConfirm(borderlineCeiling, 1100)).toBe(true);
+      expect(measurement.confirm(outsideCeiling, 1100)).toEqual({ ok: false, reason: 'non-horizontal' });
+      expect(measurement.getState()).toEqual(before);
+    }
+    expect(measurement.confirm(borderlineCeiling, 1100).ok).toBe(true);
+    expect(measurement.getState().result?.ceiling.normalY).toBe(-horizontalLimit);
+  });
+
+  it('앉아서 낮게 든 카메라도 실제 바닥과 위쪽 천장이 같은 좌표계에 있으면 측정할 수 있다', () => {
+    const measurement = new HeightMeasurement();
+    expect(measurement.confirm(floorHit({ viewerY: 0.85 }), 1000).ok).toBe(true);
+    const confirmation = measurement.confirm(ceilingHit({ viewerY: 0.9 }), 1100);
+
+    expect(confirmation.ok).toBe(true);
+    if (!confirmation.ok) throw new Error('Standing is not a measurement requirement');
+    expect(confirmation.result?.meters).toBeCloseTo(2.4, 10);
+    expect(confirmation.result?.accuracy).toBe('unverified');
+  });
+
+  it('한계: 침대 윗면을 바닥으로 지정하면 평면 정보만으로 구별하지 못하고 지정한 두 면의 차이를 낸다', () => {
+    // The model receives no image/object label. This test records a limitation,
+    // not successful furniture recognition or an accurate room measurement.
+    const measurement = new HeightMeasurement();
+    const bedTop = floorHit({ position: { x: 0, y: 0.6, z: -1 } });
+    expect(measurement.confirm(bedTop, 1000).ok).toBe(true);
+    const confirmation = measurement.confirm(ceilingHit(), 1100);
+
+    expect(confirmation.ok).toBe(true);
+    if (!confirmation.ok) throw new Error('Geometry alone cannot label a bed');
+    expect(confirmation.result?.meters).toBeCloseTo(1.8, 10);
+    expect(confirmation.result?.meters).not.toBeCloseTo(2.4, 10);
+    expect(confirmation.result?.accuracy).toBe('unverified');
+  });
+
+  it('한계: 카메라 위 문틀 아랫면은 수평 천장과 기하가 같아 자동으로 구별할 수 없다', () => {
+    const measurement = new HeightMeasurement();
+    recordFloor(measurement);
+    const lintelUnderside = ceilingHit({ position: { x: 0, y: 2.1, z: -1 } });
+    const confirmation = measurement.confirm(lintelUnderside, 1100);
+
+    expect(confirmation.ok).toBe(true);
+    if (!confirmation.ok) throw new Error('Geometry alone cannot label a doorway lintel');
+    expect(confirmation.result?.meters).toBeCloseTo(2.1, 10);
+    expect(confirmation.result?.meters).not.toBeCloseTo(2.4, 10);
+    expect(confirmation.result?.source).toBe('webxr-plane-hit');
+    expect(confirmation.result?.accuracy).toBe('unverified');
+  });
+});

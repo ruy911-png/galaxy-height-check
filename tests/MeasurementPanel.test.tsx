@@ -204,6 +204,73 @@ describe('높이 측정 화면 — 테스트 먼저, 모의 WebXR', () => {
     expect(await screen.findByText('2.40 m')).toBeTruthy();
   });
 
+  // The following bed/window/door labels describe synthetic scenarios only.
+  // This mock has plane geometry, not image recognition or object identities.
+  it('가구 위 벽에 잡힌 천장 후보는 거부하고 천장에 맞는 안내 후 같은 바닥으로 복구한다', async () => {
+    const { diagnostic } = startPanel();
+    captureFloor(diagnostic);
+    showHit(diagnostic, sample(2.1, { normalY: 0 }));
+    expect(ceilingButton().disabled).toBe(true);
+    expect(screen.getByText(/머리 바로 위 천장/)).toBeTruthy();
+    fireEvent.click(ceilingButton());
+    expect(screen.queryByText('2.10 m')).toBeNull();
+    expect(screen.queryByText('2.40 m')).toBeNull();
+    await captureCeiling(diagnostic);
+    expect(await screen.findByText('2.40 m')).toBeTruthy();
+  });
+
+  it('수평 침대 윗면과 바닥은 자동 구분할 수 없으므로 인식 성공으로 단정하지 않는다', () => {
+    const { diagnostic } = startPanel();
+    showHit(diagnostic, sample(0.5)); // Same plane data could describe a raised floor or a bed.
+    expect(floorButton().disabled).toBe(false); // Geometry alone cannot identify the object.
+    const guidance = document.getElementById('measurement-guidance')!.textContent!;
+    expect(guidance).not.toContain('바닥 위치를 인식했어요');
+    expect(guidance).toContain('침대');
+    expect(guidance).toContain('실제 바닥');
+    expect(screen.getByText(/자동으로 구분하지 못해요/)).toBeTruthy();
+    expect(screen.queryByText('2.40 m')).toBeNull();
+  });
+
+  it('수평 문틀과 천장은 자동 구분할 수 없으므로 천장 인식 성공으로 단정하지 않는다', () => {
+    const { diagnostic } = startPanel();
+    captureFloor(diagnostic);
+    showHit(diagnostic, sample(2.05)); // A lintel and a low ceiling can have identical geometry.
+    expect(ceilingButton().disabled).toBe(false);
+    const guidance = document.getElementById('measurement-guidance')!.textContent!;
+    expect(guidance).not.toContain('천장 위치를 인식했어요');
+    expect(guidance).toContain('창틀');
+    expect(guidance).toContain('문틀');
+    expect(screen.queryByText('2.05 m')).toBeNull(); // Eligibility is not confirmation.
+  });
+
+  it('창가에서 현재 hit가 사라진 뒤 눌러도 직전 천장을 저장하지 않고 새 hit에서 복구한다', async () => {
+    const { diagnostic } = startPanel();
+    captureFloor(diagnostic);
+    showHit(diagnostic, sample(2.4));
+    expect(ceilingButton().disabled).toBe(false);
+    diagnostic.hit = null; // No UI update yet: a tap races with a no-hit frame.
+    fireEvent.click(ceilingButton());
+    expect(ceilingButton().disabled).toBe(true);
+    expect(diagnostic.stop).not.toHaveBeenCalled();
+    expect(screen.queryByText('2.40 m')).toBeNull();
+    now = 3000;
+    await captureCeiling(diagnostic, sample(2.7));
+    expect(await screen.findByText('2.70 m')).toBeTruthy();
+  });
+
+  it('천장 버튼이 켜진 직후 프레임이 멈추면 오래된 후보를 거부하고 새 후보만 저장한다', async () => {
+    const { diagnostic } = startPanel();
+    captureFloor(diagnostic);
+    showHit(diagnostic, sample(2.4));
+    now += 251;
+    fireEvent.click(ceilingButton());
+    expect(ceilingButton().disabled).toBe(true);
+    expect(diagnostic.stop).not.toHaveBeenCalled();
+    expect(screen.queryByText('2.40 m')).toBeNull();
+    await captureCeiling(diagnostic, sample(2.6));
+    expect(await screen.findByText('2.60 m')).toBeTruthy();
+  });
+
   it.each([
     { label: '추적 epoch', identity: { epoch: 1 } },
     { label: '세션 ID', identity: { sessionId: 'test-session-2' } },

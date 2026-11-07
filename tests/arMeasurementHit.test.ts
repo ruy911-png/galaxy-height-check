@@ -2,6 +2,7 @@
 // These are synthetic XR/Three contract tests, not phone or room-accuracy tests.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArDiagnostic } from '../src/arDiagnostic';
+import { HeightMeasurement } from '../src/measurement';
 
 const threeState = vi.hoisted(() => ({
   renderers: [] as Array<{
@@ -94,35 +95,48 @@ async function setup() {
   };
 }
 
-type FrameOptions = {
-  noHit?: boolean;
-  noViewer?: boolean;
-  emulatedViewer?: boolean;
+type HitOptions = {
+  noPose?: boolean;
   emulatedHit?: boolean;
-  viewerY?: number;
   position?: { x: number; y: number; z: number };
   normalColumn?: [number, number, number];
 };
 
-function createFrame(options: FrameOptions): XRFrame {
+type FrameOptions = HitOptions & {
+  noHit?: boolean;
+  noViewer?: boolean;
+  emulatedViewer?: boolean;
+  viewerY?: number;
+  // WebXR orders hits from nearest to farthest. Multiple fixtures must retain
+  // that order; a more convenient distant plane cannot replace an obstruction.
+  hits?: HitOptions[];
+};
+
+function createHitPose(options: HitOptions) {
+  if (options.noPose) return null;
   const normal = options.normalColumn ?? [0, 1, 0];
+  const position = options.position ?? { x: 1, y: 0, z: -2 };
   const matrix = new Float32Array([
     1, 0, 0, 0,
     normal[0], normal[1], normal[2], 0,
     0, 0, 1, 0,
-    1, 0, -2, 1,
+    position.x, position.y, position.z, 1,
   ]);
+  return {
+    emulatedPosition: options.emulatedHit ?? false,
+    transform: { position, matrix },
+  };
+}
+
+function createFrame(options: FrameOptions): XRFrame {
   const viewer = options.noViewer ? null : {
     emulatedPosition: options.emulatedViewer ?? false,
     transform: { position: { x: 0, y: options.viewerY ?? 1.6, z: 0 } },
   };
-  const pose = {
-    emulatedPosition: options.emulatedHit ?? false,
-    transform: { position: options.position ?? { x: 1, y: 0, z: -2 }, matrix },
-  };
+  const hits = options.noHit ? [] : (options.hits ?? [options]);
   return {
     getViewerPose: vi.fn(() => viewer),
-    getHitTestResults: vi.fn(() => options.noHit ? [] : [{ getPose: vi.fn(() => pose) }]),
+    getHitTestResults: vi.fn(() => hits.map(hit => ({ getPose: vi.fn(() => createHitPose(hit)) }))),
   } as unknown as XRFrame;
 }
 
@@ -133,6 +147,110 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(navigator, 'xr');
+});
+
+describe('furnished-room failure scenarios — synthetic plane signals, not object recognition', () => {
+  const ceiling: HitOptions = { position: { x: 0, y: 2.5, z: -3 }, normalColumn: [0, -1, 0] };
+
+  it.each([
+    { scenario: 'bed headboard / vertical foreground', hit: { position: { x: 0, y: 1.9, z: -1 }, normalColumn: [0, 0, 1] } as HitOptions, reason: 'non-horizontal' },
+    { scenario: 'tilted bed board / foreground', hit: { position: { x: 0, y: 1.9, z: -1 }, normalColumn: [0.6, 0.8, 0] } as HitOptions, reason: 'non-horizontal' },
+  ])('$scenario is not skipped to select a farther ceiling', async ({ hit, reason }) => {
+    const { diagnostic, frame, setNow } = await setup();
+    const measurement = new HeightMeasurement();
+    frame();
+    expect(measurement.confirm(diagnostic.getCurrentHit(), 1000).ok).toBe(true);
+
+    setNow(1010);
+    frame({ hits: [hit, ceiling] });
+    expect(diagnostic.getCurrentHit()?.position).toEqual(hit.position);
+    expect(measurement.confirm(diagnostic.getCurrentHit(), 1010)).toEqual({ ok: false, reason });
+    expect(measurement.getState().step).toBe('ceiling');
+    expect(measurement.getState().result).toBeNull();
+  });
+
+  it.each([
+    { scenario: 'missing nearest pose', bad: { noPose: true } as HitOptions },
+    { scenario: 'emulated nearest pose', bad: { emulatedHit: true } as HitOptions },
+    { scenario: 'invalid nearest normal', bad: { normalColumn: [0, Number.NaN, 0] } as HitOptions },
+  ])('window-side failure: $scenario clears the old candidate and does not skip to a farther hit', async ({ bad }) => {
+    const { diagnostic, frame, setNow, onUpdate } = await setup();
+    frame();
+    const oldHit = diagnostic.getCurrentHit()!;
+    setNow(1010);
+    frame({ hits: [bad, ceiling] });
+    expect(diagnostic.getCurrentHit()).toBeNull();
+    expect(diagnostic.confirmSurface()).toBeNull();
+    expect(onUpdate.mock.calls.at(-1)?.[0]).toMatchObject({ phase: 'searching', canConfirm: false });
+
+    setNow(1020);
+    frame(ceiling);
+    const recovered = diagnostic.getCurrentHit()!;
+    expect(recovered.epoch).toBe(oldHit.epoch); // Phone tracking remained valid.
+    expect(recovered.position).toEqual(ceiling.position);
+    expect(recovered.timestamp).toBe(1020);
+  });
+
+  it('window-side no-hit intervals cannot confirm the previous ceiling but allow a fresh ceiling after recovery', async () => {
+    const { diagnostic, frame, setNow } = await setup();
+    const measurement = new HeightMeasurement();
+    frame();
+    measurement.confirm(diagnostic.getCurrentHit(), 1000);
+    const savedFloor = measurement.getState().floor;
+    setNow(1010);
+    frame(ceiling);
+    expect(measurement.canConfirm(diagnostic.getCurrentHit(), 1010)).toBe(true);
+
+    for (const time of [1020, 1120, 1220]) {
+      setNow(time);
+      frame({ noHit: true });
+      expect(measurement.confirm(diagnostic.getCurrentHit(), time)).toEqual({ ok: false, reason: 'no-hit' });
+      expect(measurement.getState().floor).toEqual(savedFloor);
+      expect(measurement.getState().result).toBeNull();
+    }
+
+    setNow(1230);
+    frame({ ...ceiling, position: { x: 0, y: 2.6, z: -3 } });
+    const completed = measurement.confirm(diagnostic.getCurrentHit(), 1230);
+    expect(completed.ok).toBe(true);
+    if (!completed.ok) throw new Error('Expected fresh ceiling after no-hit recovery');
+    expect(completed.result?.meters).toBe(2.6); // Never the stale 2.5m candidate.
+  });
+
+  it('doorway-side vertical jamb is rejected while a later downward-facing horizontal ceiling can complete the same measurement', async () => {
+    const { diagnostic, frame, setNow } = await setup();
+    const measurement = new HeightMeasurement();
+    frame();
+    measurement.confirm(diagnostic.getCurrentHit(), 1000);
+    const savedFloor = measurement.getState().floor;
+    setNow(1010);
+    frame({ position: { x: 0, y: 2, z: -1 }, normalColumn: [1, 0, 0] });
+    expect(measurement.confirm(diagnostic.getCurrentHit(), 1010)).toEqual({ ok: false, reason: 'non-horizontal' });
+    expect(measurement.getState().floor).toEqual(savedFloor);
+
+    setNow(1020);
+    frame(ceiling);
+    expect(diagnostic.getCurrentHit()?.normalY).toBe(-1);
+    const completed = measurement.confirm(diagnostic.getCurrentHit(), 1020);
+    expect(completed.ok).toBe(true);
+    if (!completed.ok) throw new Error('Expected a horizontal ceiling to recover');
+    expect(completed.result?.meters).toBe(2.5);
+  });
+
+  it('doorway-side tracking loss cannot join the old floor to a ceiling after tracking recovers', async () => {
+    const { diagnostic, frame, setNow } = await setup();
+    const measurement = new HeightMeasurement();
+    frame();
+    measurement.confirm(diagnostic.getCurrentHit(), 1000);
+    setNow(1010);
+    frame({ emulatedViewer: true });
+    expect(diagnostic.getCurrentHit()).toBeNull();
+
+    setNow(1020);
+    frame(ceiling);
+    expect(measurement.confirm(diagnostic.getCurrentHit(), 1020)).toEqual({ ok: false, reason: 'coordinate-space-changed' });
+    expect(measurement.getState()).toEqual({ step: 'floor', floor: null, result: null });
+  });
 });
 
 describe('current real-hit metadata exposed to the measurement model', () => {
