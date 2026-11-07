@@ -157,3 +157,43 @@ footer p { margin: 6px 0 0; }
   .measurement-guide h2 { font-size: 16px; }
   .measurement-guide [role="status"] { margin-top: 4px; font-size: 12px; }
 }
+/* The two guides are exact viewport positions used by the paired XR rays.
+   Instructions stay between them; no capture control sits under Android's
+   temporary fullscreen banner at the bottom. */
+.auto-framing-diagram { display: block; width: min(100%, 340px); height: auto; margin: 24px auto 20px; }
+.auto-instructions { margin: 0 auto 18px; padding-left: 22px; max-width: 620px; font-size: 14px; line-height: 1.8; color: #465e47; }
+.auto-instructions li { margin-bottom: 10px; padding-left: 2px; word-break: keep-all; }
+.auto-limitation { font-size: 12px; line-height: 1.8; color: #6c765e; margin: 14px auto; max-width: 620px; word-break: keep-all; }
+.auto-measurement-card > .primary-button { margin-top: 20px; }
+.auto-target { position: absolute; left: 50%; width: 48px; height: 48px; transform: translate(-50%, -50%); border: 2px dashed #fff; border-radius: 50%; box-shadow: 0 0 0 2px #18382b80; color: #fff; pointer-events: none; }
+.auto-target-ceiling { top: 20%; }
+.auto-target-floor { top: 80%; }
+.auto-target.has-signal { border-style: solid; border-color: #ffe08a; color: #ffe08a; }
+.auto-target-cross { position: absolute; inset: 0; display: grid; place-items: center; font-size: 26px; line-height: 1; text-shadow: 0 1px 4px #000; }
+.auto-target-label { position: absolute; top: 50%; left: calc(100% + 12px); transform: translateY(-50%); width: max-content; max-width: calc(50vw - 48px); font-size: 12px; line-height: 1.5; color: white; background: #173e31d9; padding: 6px 8px; border-radius: 7px; }
+.auto-target-label small { display: block; font-size: 10px; font-weight: 400; color: #dfebd3; }
+.auto-feedback { position: absolute; left: 16px; right: 16px; top: 50%; transform: translateY(-50%); width: auto; max-width: 440px; max-height: 40%; margin: 0 auto; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; border-radius: 16px; padding: 14px 16px; background: #fffef8ed; color: #234936; box-shadow: 0 8px 28px #0002; text-align: center; }
+.auto-feedback h2 { font-size: 17px; line-height: 1.4; }
+.auto-guidance { margin: 8px 0; font-size: 13px; line-height: 1.6; word-break: keep-all; }
+.auto-feedback progress { width: 100%; height: 6px; accent-color: #39754f; }
+.auto-caveat { font-size: 11px; line-height: 1.5; color: #7b683b; margin: 9px 0 3px; word-break: keep-all; }
+.auto-reread { display: block; min-height: 44px; min-width: 100px; margin: 4px auto 0; background: transparent; border: none; color: #315d43; text-decoration: underline; text-underline-offset: 3px; font-size: 12px; }
+.auto-result-label { margin: 0 0 4px; font-size: 12px; color: #586c4c; }
+.auto-result-meters { display: inline-block; font-size: clamp(34px, 8vw, 48px); line-height: 1.2; letter-spacing: -1.8px; color: #214d38; }
+.auto-result-cm { display: inline-block; margin-left: 12px; font-size: 16px; color: #697c5b; }
+@media (max-width: 355px) {
+  .auto-target-label { left: calc(100% + 8px); font-size: 11px; padding: 5px 6px; }
+  .auto-feedback { padding: 12px; }
+  .auto-feedback h2 { font-size: 15px; }
+}
+@media (max-height: 520px) {
+  .auto-feedback { left: 16px; right: auto; width: calc(50% - 56px); max-width: 360px; max-height: calc(100% - 136px); margin: 0; padding: 10px 12px; }
+  .auto-feedback h2 { font-size: 15px; }
+  .auto-guidance { font-size: 12px; line-height: 1.4; margin: 5px 0; }
+  .auto-caveat { margin: 5px 0 0; line-height: 1.4; }
+  .auto-reread { margin-top: 0; }
+  .auto-result-meters { font-size: 34px; }
+  .auto-result-cm { margin-left: 8px; font-size: 14px; }
+  .auto-result-label { font-size: 11px; }
+  .auto-target-label { padding: 4px 7px; }
+}

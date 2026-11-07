@@ -9,6 +9,7 @@ import {
 } from 'three';
 import { SurfaceGuard, type SurfaceSample } from './surfaceGuard';
 import type { MeasurementHit } from './measurement';
+import { createAutoRayPlan, autoRayPlansMatch, type AutoRayPlan } from './autoRay';
 
 export type { SurfaceSample } from './surfaceGuard';
 export type ArPhase =
@@ -34,6 +35,14 @@ interface Run {
   sessionId: string;
   epoch: number;
   currentHit: MeasurementHit | null;
+  currentPair: { floor: MeasurementHit | null; ceiling: MeasurementHit | null };
+  viewer?: XRReferenceSpace;
+  pairPlan?: AutoRayPlan;
+  pairReconfigured: boolean;
+  pairVersion: number;
+  pairSources?: { floor: XRHitTestSource; ceiling: XRHitTestSource };
+  pairHandles: Set<XRHitTestSource>;
+  pairReticles?: { floor: Mesh<RingGeometry, MeshBasicMaterial>; ceiling: Mesh<RingGeometry, MeshBasicMaterial> };
   closed: boolean;
   released: boolean;
   nativeEnded: boolean;
@@ -64,6 +73,7 @@ type Options = {
   host: HTMLDivElement;
   overlay: HTMLDivElement;
   onUpdate: (state: ArUpdate) => void;
+  measurementMode?: 'single-view';
 };
 
 // Hits stay in memory, so a monotonic identity is sufficient within this page.
@@ -99,6 +109,10 @@ export class ArDiagnostic {
       sessionId: `ar-session-${++nextRunIdentity}`,
       epoch: 0,
       currentHit: null,
+      currentPair: { floor: null, ceiling: null },
+      pairVersion: 0,
+      pairReconfigured: false,
+      pairHandles: new Set(),
       closed: false,
       released: false,
       nativeEnded: false,
@@ -169,6 +183,18 @@ export class ArDiagnostic {
       run.reticle.matrixAutoUpdate = false;
       run.reticle.visible = false;
       run.scene.add(run.reticle);
+      if (this.options.measurementMode === 'single-view') {
+        const makeReticle = () => {
+          const g = new RingGeometry(0.045, 0.06, 40);
+          g.rotateX(-Math.PI / 2);
+          const mesh = new Mesh(g, new MeshBasicMaterial({ color: 0x64ffd2, side: DoubleSide, depthTest: false }));
+          mesh.matrixAutoUpdate = false;
+          mesh.visible = false;
+          run.scene!.add(mesh);
+          return mesh;
+        };
+        run.pairReticles = { floor: makeReticle(), ceiling: makeReticle() };
+      }
 
       // Three starts its ordinary window RAF whenever setAnimationLoop receives
       // a callback. Register BEFORE setSession so XR's sessionstart stops that
@@ -191,16 +217,21 @@ export class ArDiagnostic {
       if (!session.requestHitTestSource) {
         throw new DOMException('Hit testing is unavailable', 'NotSupportedError');
       }
-      const source = await session.requestHitTestSource({ space: viewer, entityTypes: ['plane'] });
-      if (!source) throw new Error('Missing hit-test source');
-      if (run.closed) {
-        source.cancel();
-        return;
+      run.viewer = viewer;
+      if (this.options.measurementMode !== 'single-view') {
+        const source = await session.requestHitTestSource({ space: viewer, entityTypes: ['plane'] });
+        if (!source) throw new Error('Missing hit-test source');
+        if (run.closed) {
+          source.cancel();
+          return;
+        }
+        run.source = source;
       }
-      run.source = source;
       run.generation = run.guard.begin();
       run.lastFrameAt = performance.now();
-      this.publish(run, 'searching', '휴대폰을 천천히 움직여 표면 위에 초록 원이 나타나는지 확인해 주세요.');
+      this.publish(run, 'searching', this.options.measurementMode === 'single-view'
+        ? '위쪽 표시에는 실제 천장, 아래쪽 표시에는 실제 바닥이 함께 보이게 해 주세요.'
+        : '휴대폰을 천천히 움직여 표면 위에 초록 원이 나타나는지 확인해 주세요.');
 
       // A stopped frame loop must not leave the final rendered hit confirmable.
       run.timer = setInterval(() => {
@@ -221,6 +252,7 @@ export class ArDiagnostic {
   }
 
   confirmSurface(): SurfaceSample | null {
+    if (this.options.measurementMode === 'single-view') return null;
     const run = this.run;
     if (
       !run ||
@@ -254,13 +286,35 @@ export class ArDiagnostic {
     return { ...hit, position: { ...position } };
   }
 
+  /** Only current real-frame hits are exposed; no saved floor is reused. */
+  getCurrentPair(): { floor: MeasurementHit | null; ceiling: MeasurementHit | null } {
+    const empty = { floor: null, ceiling: null };
+    const run = this.run;
+    if (!run || run.closed || this.options.measurementMode !== 'single-view' ||
+      run.session?.visibilityState !== 'visible' || document.hidden) return empty;
+    // Reentrant UI subscribers may read during a tracking-lost notification.
+    // Once invalidated there is no candidate to expire or republish.
+    if (!run.currentPair.floor && !run.currentPair.ceiling) return empty;
+    if (!this.viewportAligned()) { this.blockViewport(run); return empty; }
+    const age = performance.now() - run.lastFrameAt;
+    if (!Number.isFinite(age) || age < 0 || age > run.guard.maxAgeMs) {
+      this.invalidate(run, true);
+      this.publish(run, 'tracking-lost', '새 AR 위치를 받지 못했습니다. 두 표면을 다시 비춰 주세요.');
+      return empty;
+    }
+    const clone = (hit: MeasurementHit | null) => hit && hit.sessionId === run.sessionId && hit.epoch === run.epoch
+      ? { ...hit, position: { ...hit.position } } : null;
+    return { floor: clone(run.currentPair.floor), ceiling: clone(run.currentPair.ceiling) };
+  }
+
   private onFrame(run: Run, frame?: XRFrame): void {
     if (run.closed || this.run !== run || !frame) return;
     // Ordinary window RAF has no XRFrame. It is not a failed AR pose and must
     // neither clear a valid hit nor refresh the real-XR heartbeat. Genuine XR
     // frames with a missing/emulated viewer pose are still rejected below.
     const { session, renderer, scene, camera, reference, source, reticle } = run;
-    if (!session || !renderer || !scene || !camera || !reference || !source || !reticle) return;
+    if (!session || !renderer || !scene || !camera || !reference || !reticle ||
+      (this.options.measurementMode === 'single-view' ? !run.viewer : !source)) return;
 
     const now = performance.now();
     const frameGap = now - run.lastFrameAt;
@@ -268,7 +322,9 @@ export class ArDiagnostic {
       this.invalidate(run, true);
       // A resumed RAF may run before the timer heartbeat after a suspension.
       // Notify synchronously so a saved floor is cleared before this new hit.
-      this.publish(run, 'tracking-lost', 'AR 위치 갱신이 잠시 끊겨 이전 지점을 지웠습니다. 바닥부터 다시 지정해 주세요.');
+      this.publish(run, 'tracking-lost', this.options.measurementMode === 'single-view'
+        ? 'AR 위치 갱신이 잠시 끊겼어요. 바닥과 천장이 함께 보이게 다시 맞춰 주세요.'
+        : 'AR 위치 갱신이 잠시 끊겨 이전 지점을 지웠습니다. 바닥부터 다시 지정해 주세요.');
     }
     run.lastFrameAt = now;
     // Always invalidate first. A frame with no hit never reuses an earlier hit.
@@ -288,8 +344,10 @@ export class ArDiagnostic {
       ) {
         this.invalidate(run, true);
         this.publish(run, 'tracking-lost', '휴대폰 위치를 추적하지 못했습니다. 밝고 무늬가 있는 주변을 천천히 비춰 주세요.');
+      } else if (this.options.measurementMode === 'single-view') {
+        this.readPairFrame(run, frame, viewerPose);
       } else {
-        const results = frame.getHitTestResults(source);
+        const results = frame.getHitTestResults(source!);
         const pose = results[0]?.getPose(reference);
         if (pose && !pose.emulatedPosition) {
           const { x, y, z } = pose.transform.position;
@@ -329,9 +387,115 @@ export class ArDiagnostic {
     }
   }
 
+  private viewportAligned(): boolean {
+    const viewport = window.visualViewport;
+    // Full-screen mono XR guides assume an unscaled, unpanned DOM overlay.
+    // Browser pinch zoom is distinct from camera FOV/projection changes.
+    return !viewport || (
+      [viewport.scale, viewport.offsetLeft, viewport.offsetTop].every(Number.isFinite) &&
+      Math.abs(viewport.scale - 1) <= 0.01 &&
+      Math.abs(viewport.offsetLeft) <= 1 && Math.abs(viewport.offsetTop) <= 1
+    );
+  }
+
+  private blockViewport(run: Run): void {
+    this.invalidate(run, false);
+    this.cancelPairSources(run);
+    this.publish(run, 'searching', '화면 확대를 원래 크기로 돌려 주세요. 표시와 카메라 위치가 맞지 않아 측정을 멈췄어요.');
+  }
+
+  private readPairFrame(run: Run, frame: XRFrame, viewerPose: XRViewerPose): void {
+    if (!this.viewportAligned()) { this.blockViewport(run); return; }
+    const plan = createAutoRayPlan(viewerPose);
+    if (!plan) {
+      this.cancelPairSources(run);
+      this.publish(run, 'searching', '현재 카메라 화면의 두 위치를 읽을 수 없습니다. 휴대폰 화면을 다시 맞춰 주세요.');
+      return;
+    }
+    if (!run.pairPlan || !autoRayPlansMatch(run.pairPlan, plan)) {
+      this.configurePairSources(run, plan);
+    }
+    if (!run.pairSources) {
+      this.publish(run, 'searching', run.pairReconfigured
+        ? '카메라 시야가 바뀌어 두 위치를 다시 읽고 있어요.'
+        : '화면 위·아래의 표면 인식을 준비하고 있어요.');
+      return;
+    }
+    const read = (side: 'floor' | 'ceiling'): MeasurementHit | null => {
+      // The nearest result is authoritative. Never see through a nearer invalid
+      // pose, wall, glass, furniture or doorway to select a convenient plane.
+      const pose = frame.getHitTestResults(run.pairSources![side])[0]?.getPose(run.reference!);
+      if (!pose || pose.emulatedPosition) return null;
+      const { x, y, z } = pose.transform.position;
+      const matrix = pose.transform.matrix;
+      const normalLength = Math.hypot(matrix[4], matrix[5], matrix[6]);
+      const normalY = matrix[5] / normalLength;
+      if (![x, y, z, normalLength, normalY].every(Number.isFinite) || normalLength <= 0) return null;
+      const reticle = run.pairReticles?.[side];
+      if (reticle) { reticle.matrix.fromArray(matrix); reticle.visible = true; }
+      return {
+        position: { x, y, z }, normalY, viewerY: viewerPose.transform.position.y,
+        timestamp: run.lastFrameAt, sessionId: run.sessionId, epoch: run.epoch,
+        source: 'webxr-plane-hit',
+      };
+    };
+    run.currentPair = { floor: read('floor'), ceiling: read('ceiling') };
+    if (run.currentPair.floor && run.currentPair.ceiling) {
+      run.hits += 1;
+      this.publish(run, 'surface', '화면 위·아래의 두 표면 위치를 읽고 있어요. 실제 바닥·천장인지 확인해 주세요.');
+    } else this.publish(run, 'searching', '바닥과 천장 두 표면을 함께 찾고 있어요. 표시가 실제 바닥·천장에 놓이게 해 주세요.');
+  }
+
+  private configurePairSources(run: Run, plan: AutoRayPlan): void {
+    run.pairReconfigured = run.pairPlan !== undefined;
+    this.cancelPairSources(run);
+    run.pairPlan = plan;
+    const version = run.pairVersion;
+    const request = async (side: 'floor' | 'ceiling') => {
+      try {
+        const ray = plan[side];
+        const source = await run.session!.requestHitTestSource!({
+          space: run.viewer!, entityTypes: ['plane'], offsetRay: new XRRay(ray.origin, ray.direction),
+        });
+        if (!source) throw new Error('Missing paired hit-test source');
+        if (run.closed || this.run !== run || run.pairVersion !== version) {
+          try { source.cancel(); } catch { /* Native session may already be ended. */ }
+          return null;
+        }
+        run.pairHandles.add(source);
+        return source;
+      } catch (error) {
+        if (!run.closed && run.pairVersion === version) void this.close(run, 'error', explainError(error));
+        throw error;
+      }
+    };
+    // Requests run together, but a pair is published only after both belong to
+    // this exact configuration. Late handles are cancelled by the owner above.
+    void Promise.all([request('floor'), request('ceiling')]).then(([floor, ceiling]) => {
+      if (!run.closed && this.run === run && run.pairVersion === version && floor && ceiling) {
+        run.pairSources = { floor, ceiling };
+      }
+    }).catch(() => { /* The request owner already reported and closed this run. */ });
+  }
+
+  private cancelPairSources(run: Run): void {
+    run.pairVersion += 1;
+    run.pairPlan = undefined;
+    run.pairSources = undefined;
+    for (const source of run.pairHandles) {
+      try { source.cancel(); } catch { /* Native ended sessions own cleanup. */ }
+    }
+    run.pairHandles.clear();
+  }
+
   private invalidate(run: Run, resetCount: boolean): void {
     run.guard.clear();
     run.currentHit = null;
+    run.currentPair = { floor: null, ceiling: null };
+    if (run.pairReticles) {
+      run.pairReticles.floor.visible = false;
+      run.pairReticles.ceiling.visible = false;
+    }
     if (run.reticle) run.reticle.visible = false;
     if (resetCount) {
       run.hits = 0;
@@ -347,13 +511,16 @@ export class ArDiagnostic {
     const changed = run.phase !== phase || run.lastMessage !== message;
     run.phase = phase;
     run.lastMessage = message;
-    // Render camera frames at native speed, but update React status at most 10 Hz.
-    if (!changed && now - run.lastUpdateAt < 100) return;
+    // Manual diagnostics update UI at most 10 Hz. Automatic measurement must
+    // observe every frame so an intermediate bad pair resets stability.
+    if (this.options.measurementMode !== 'single-view' && !changed && now - run.lastUpdateAt < 100) return;
     run.lastUpdateAt = now;
     this.options.onUpdate({
       phase,
       message,
-      canConfirm: !run.closed && phase === 'surface' && run.guard.read(now) !== null,
+      canConfirm: !run.closed && phase === 'surface' && (this.options.measurementMode === 'single-view'
+        ? run.currentPair.floor !== null && run.currentPair.ceiling !== null
+        : run.guard.read(now) !== null),
       hitCount: run.hits,
     });
   }
@@ -379,6 +546,7 @@ export class ArDiagnostic {
     if (run.released) return Promise.resolve();
     if (run.closePromise) return run.closePromise;
     run.closed = true;
+    this.cancelPairSources(run);
     run.terminal ??= { phase, message };
     this.invalidate(run, true);
     run.guard.end();
@@ -426,6 +594,7 @@ export class ArDiagnostic {
     run.released = true;
     this.invalidate(run, true);
     run.guard.end();
+    this.cancelPairSources(run);
     if (run.timer !== undefined) clearInterval(run.timer);
     run.timer = undefined;
     for (const remove of run.removeListeners.splice(0)) remove();
@@ -436,6 +605,12 @@ export class ArDiagnostic {
     run.renderer?.setAnimationLoop(null);
     run.reticle?.geometry.dispose();
     run.reticle?.material.dispose();
+    if (run.pairReticles) {
+      for (const reticle of Object.values(run.pairReticles)) {
+        reticle.geometry.dispose(); reticle.material.dispose();
+      }
+      run.pairReticles = undefined;
+    }
     run.scene?.clear();
     run.renderer?.dispose();
     run.renderer?.domElement.remove();
@@ -444,6 +619,7 @@ export class ArDiagnostic {
     run.scene = undefined;
     run.camera = undefined;
     run.reference = undefined;
+    run.viewer = undefined;
     run.session = undefined;
   }
 }

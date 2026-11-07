@@ -27,6 +27,7 @@ vi.mock('../src/arDiagnostic', () => ({
     stop = vi.fn(async () => { this.emit('ended'); });
     confirmSurface = vi.fn((): SurfaceSample | null => null);
     getCurrentHit = vi.fn(() => null);
+    getCurrentPair = vi.fn(() => ({ floor: null, ceiling: null }));
   },
 }));
 
@@ -85,6 +86,14 @@ async function startAr() {
 }
 
 describe('1단계 React 사용 흐름 — 모의 하드웨어', () => {
+  it('첫 화면의 기본 측정은 한 화면 자동 계산이며 바닥·천장을 따로 지정하도록 요구하지 않는다', async () => {
+    await readyApp();
+    expect(screen.getByRole('heading', { name: '한 화면에서 자동 계산' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '높이 측정 시작' }));
+    expect(screen.queryByRole('button', { name: '바닥 지정' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '천장 지정' })).toBeNull();
+  });
+
   it('WebXR가 없으면 AR 시작을 막고 높이값을 만들어 표시하지 않는다', async () => {
     Object.defineProperty(navigator, 'xr', { configurable: true, value: undefined });
     render(<App />);
