@@ -111,7 +111,7 @@ export default function BaseTopMeasurementPanel({ supported, blocked = false, on
       const outcome = model.preview(frame, performance.now());
       reason = outcome.ok ? null : outcome.reason;
       if (outcome.ok) candidate = outcome.result;
-    } else reason = model.getRejectionReason(frame, performance.now());
+    } else reason = model.observe(frame, performance.now());
     const nextStep = model.getState().step;
     setStep(nextStep);
     setPreview(candidate);
@@ -186,6 +186,7 @@ export default function BaseTopMeasurementPanel({ supported, blocked = false, on
       {result ? <div className="measurement-result base-top-result" aria-live="polite">
         <HeightValue value={result} />
         <p className="result-provenance">{result.source === 'virtual-vertical-plane' ? estimateExplanation : '지정한 두 표면 위치의 수직 높이 차이예요. 표면이 실제 바닥과 원하는 상단인지 확인해야 해요.'}</p>
+        {result.smoothedFrames > 1 && <p className="result-provenance">손떨림을 줄이려고 지정 직전 {result.smoothedFrames}개 화면의 중간값을 사용했어요.</p>}
         <p className="result-provenance">실제 줄자와의 차이는 아직 검증하지 않았어요.</p>
         <button className="primary-button" disabled={!supported || blocked || active || closing} onClick={start}>다시 측정</button>
       </div> : <>

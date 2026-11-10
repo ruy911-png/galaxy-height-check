@@ -19,6 +19,8 @@ export interface BaseTopResult {
   lateralMeters: number;
   source: 'webxr-plane-hit' | 'virtual-vertical-plane';
   accuracy: 'unverified';
+  /** Frames behind the upper point: 1 is the tapped frame alone, more is a median. */
+  smoothedFrames: number;
   base: MeasurementHit;
   top: Point3;
   timestamp: number;
@@ -40,6 +42,22 @@ const MIN_BASE_DISTANCE_METERS = .2;
 const MIN_HEIGHT_METERS = .005;
 const MIN_RAY_PLANE_DOT = .1;
 const MAX_INTERSECTION_DISTANCE_METERS = 30;
+// Hand tremor and the tap itself move single frames. These limits only decide
+// when recent frames agree well enough to share a median; they are not a
+// measured accuracy tolerance.
+const SMOOTHING_WINDOW_MS = 400;
+const SMOOTHING_AGREEMENT_METERS = .03;
+const SMOOTHING_MIN_SAMPLES = 3;
+const SMOOTHING_MIN_AGREEMENT = .6;
+
+type SampleKind = 'base' | BaseTopResult['source'];
+interface Sample { kind: SampleKind; point: Point3; timestamp: number; sessionId: string; epoch: number }
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
 
 function finitePoint(value: unknown): value is Point3 {
   if (!value || typeof value !== 'object') return false;
@@ -92,6 +110,7 @@ function hitFailure(frame: AimFrame): string | null {
 export class BaseTopMeasurement {
   private state = emptyState();
   private planeNormal: Point3 | null = null;
+  private samples: Sample[] = [];
 
   getState(): BaseTopState {
     return {
@@ -124,8 +143,19 @@ export class BaseTopMeasurement {
       return null;
     }
 
-    const candidate = this.topCandidate(frame);
+    const candidate = this.topCandidate(frame, false);
     return candidate.ok ? null : candidate.reason;
+  }
+
+  /**
+   * Base-step counterpart of preview: call once per new frame so the tapped
+   * base can use the median of the steady frames just before the tap.
+   */
+  observe(frame: AimFrame | null, now: number): string | null {
+    const reason = this.getRejectionReason(frame, now);
+    if (reason) this.invalidateFor(reason);
+    else if (this.state.step === 'base') this.record('base', frame!.hit!.position, frame!);
+    return reason;
   }
 
   canConfirm(frame: AimFrame | null, now: number): boolean {
@@ -139,7 +169,7 @@ export class BaseTopMeasurement {
       return { ok: false, reason };
     }
     if (this.state.step === 'base') return { ok: false, reason: 'base-required' };
-    return this.topCandidate(frame!);
+    return this.topCandidate(frame!, true);
   }
 
   confirm(frame: AimFrame | null, now: number): BaseTopConfirmation {
@@ -150,6 +180,14 @@ export class BaseTopMeasurement {
     }
     if (this.state.step === 'base') {
       const base = cloneHit(frame!.hit!);
+      this.record('base', base.position, frame!);
+      const steady = this.smoothed('base', frame!, base.position, false).point;
+      // The steady point must still satisfy the checks the tapped frame passed.
+      if (steady.y < frame!.viewerY - .05
+        && Math.hypot(frame!.origin.x - steady.x, frame!.origin.z - steady.z) >= MIN_BASE_DISTANCE_METERS) {
+        base.position = steady;
+      }
+      this.samples = [];
       const nx = frame!.origin.x - base.position.x;
       const nz = frame!.origin.z - base.position.z;
       const distance = Math.hypot(nx, nz);
@@ -158,8 +196,9 @@ export class BaseTopMeasurement {
       return { ok: true, result: null };
     }
 
-    const candidate = this.topCandidate(frame!);
+    const candidate = this.topCandidate(frame!, true);
     if (!candidate.ok) return candidate;
+    this.samples = [];
     this.state = { step: 'result', base: this.state.base, result: cloneResult(candidate.result) };
     return { ok: true, result: cloneResult(candidate.result) };
   }
@@ -167,6 +206,7 @@ export class BaseTopMeasurement {
   reset(): void {
     this.state = emptyState();
     this.planeNormal = null;
+    this.samples = [];
   }
 
   invalidate(): void { this.reset(); }
@@ -175,7 +215,36 @@ export class BaseTopMeasurement {
     if (['no-frame', 'invalid-frame', 'stale-frame', 'future-frame', 'coordinate-space-changed'].includes(reason)) this.reset();
   }
 
-  private topCandidate(frame: AimFrame): BaseTopPreview {
+  private record(kind: SampleKind, point: Point3, frame: AimFrame): void {
+    const last = this.samples[this.samples.length - 1];
+    if (last && frame.timestamp < last.timestamp) this.samples = [];
+    else if (last && frame.timestamp === last.timestamp) return;
+    this.samples = this.samples.filter((sample) => frame.timestamp - sample.timestamp <= SMOOTHING_WINDOW_MS);
+    this.samples.push({ kind, point: { ...point }, timestamp: frame.timestamp, sessionId: frame.sessionId, epoch: frame.epoch });
+  }
+
+  /**
+   * Median of the recent frames of the same kind, only when most of them agree.
+   * While the aim is still moving, or after too few frames, the current frame
+   * is returned unchanged, so a different kind of surface is never blended in.
+   */
+  private smoothed(kind: SampleKind, frame: AimFrame, current: Point3, heightOnly: boolean): { point: Point3; frames: number } {
+    const unchanged = { point: current, frames: 1 };
+    const recent = this.samples.filter((sample) => sample.kind === kind
+      && sample.sessionId === frame.sessionId && sample.epoch === frame.epoch
+      && frame.timestamp >= sample.timestamp && frame.timestamp - sample.timestamp <= SMOOTHING_WINDOW_MS);
+    if (recent.length < SMOOTHING_MIN_SAMPLES) return unchanged;
+    const y = median(recent.map((sample) => sample.point.y));
+    const centre = heightOnly ? { x: current.x, y, z: current.z } : {
+      x: median(recent.map((sample) => sample.point.x)), y, z: median(recent.map((sample) => sample.point.z)),
+    };
+    const agreeing = recent.filter((sample) => (heightOnly ? Math.abs(sample.point.y - y)
+      : Math.hypot(sample.point.x - centre.x, sample.point.y - y, sample.point.z - centre.z)) <= SMOOTHING_AGREEMENT_METERS).length;
+    if (agreeing < SMOOTHING_MIN_SAMPLES || agreeing / recent.length < SMOOTHING_MIN_AGREEMENT || !finitePoint(centre)) return unchanged;
+    return { point: centre, frames: agreeing };
+  }
+
+  private topCandidate(frame: AimFrame, remember: boolean): BaseTopPreview {
     const base = this.state.base;
     const normal = this.planeNormal;
     if (!base || !normal) return { ok: false, reason: 'base-required' };
@@ -203,9 +272,16 @@ export class BaseTopMeasurement {
     }
     if (!finitePoint(top)) return { ok: false, reason: 'invalid-intersection' };
     if (top.y - base.position.y <= MIN_HEIGHT_METERS) return { ok: false, reason: 'top-not-above-base' };
+    let smoothedFrames = 1;
+    if (remember) {
+      this.record(source, top, frame);
+      // Only height is smoothed: wall and ceiling hits near the corner differ sideways.
+      const steady = this.smoothed(source, frame, top, true);
+      if (steady.point.y - base.position.y > MIN_HEIGHT_METERS) { top = steady.point; smoothedFrames = steady.frames; }
+    }
     try {
       return { ok: true, result: {
-        ...calculateVerticalHeight(base.position, top), source, accuracy: 'unverified',
+        ...calculateVerticalHeight(base.position, top), source, accuracy: 'unverified', smoothedFrames,
         base: cloneHit(base), top, timestamp: frame.timestamp, sessionId: frame.sessionId, epoch: frame.epoch,
       } };
     } catch {

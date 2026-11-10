@@ -217,3 +217,61 @@ describe('원본 방식의 기준점→상단 측정 — 합성 좌표, 실측 �
     expect(model.preview(frame(1100, 2.1), 1100)).toMatchObject({ ok: true, result: { meters: 1.6, source: 'webxr-plane-hit', accuracy: 'unverified' } });
   });
 });
+
+describe('여러 프레임 중간값 — 합성 좌표, 실측 아님', () => {
+  function baseAt(time: number, x: number, y = 0): AimFrame {
+    const value = frame(time); value.hit!.position.x = x; value.hit!.position.y = y; return value;
+  }
+
+  it('지정 직전의 안정된 바닥 프레임 중간값을 기준점으로 쓰고 누르는 순간의 흔들림을 버린다', () => {
+    const model = new BaseTopMeasurement();
+    [0, .004, -.004, .002].forEach((x, i) => expect(model.observe(baseAt(1000 + i * 33, x, x / 2), 1000 + i * 33)).toBeNull());
+    expect(model.confirm(baseAt(1132, .2, .02), 1132)).toEqual({ ok: true, result: null });
+    const { x, y } = model.getState().base!.position;
+    expect(x).toBeCloseTo(.002, 6); expect(y).toBeCloseTo(.001, 6);
+  });
+
+  it('조준이 아직 움직이는 중이면 누른 프레임을 그대로 쓴다', () => {
+    const model = new BaseTopMeasurement();
+    [0, .1, .2, .3].forEach((x, i) => model.observe(baseAt(1000 + i * 33, x), 1000 + i * 33));
+    model.confirm(baseAt(1132, .4), 1132);
+    expect(model.getState().base!.position.x).toBe(.4);
+  });
+
+  it('창보다 오래된 바닥 프레임은 섞지 않는다', () => {
+    const model = new BaseTopMeasurement();
+    [0, .004, .002].forEach((x, i) => model.observe(baseAt(1000 + i * 33, x), 1000 + i * 33));
+    model.confirm(baseAt(1600, .2), 1600);
+    expect(model.getState().base!.position.x).toBe(.2);
+  });
+
+  it('상단은 안정된 프레임들의 높이 중간값을 쓰고 프레임 수를 알린다', () => {
+    const model = based();
+    [2.40, 2.41, 2.39, 2.405].forEach((h, i) => model.preview(frame(1100 + i * 33, h), 1100 + i * 33));
+    const outcome = model.confirm(frame(1232, 2.6), 1232);
+    expect(outcome).toMatchObject({ ok: true, result: { source: 'webxr-plane-hit', smoothedFrames: 4 } });
+    expect(outcome.ok && outcome.result!.meters).toBeCloseTo(2.405, 6);
+  });
+
+  it('표면 hit와 가상면 추정을 서로 섞지 않는다', () => {
+    const model = based();
+    [2.40, 2.41, 2.39].forEach((h, i) => model.preview(frame(1100 + i * 33, h), 1100 + i * 33));
+    const outcome = model.confirm(frame(1199, null), 1199);
+    expect(outcome).toMatchObject({ ok: true, result: { source: 'virtual-vertical-plane', smoothedFrames: 1 } });
+    expect(outcome.ok && outcome.result!.meters).toBeCloseTo(2.4, 6);
+  });
+
+  it('읽기 전용 검사는 프레임을 기억하지 않는다', () => {
+    const model = based();
+    [2.40, 2.41, 2.39].forEach((h, i) => model.getRejectionReason(frame(1100 + i * 33, h), 1100 + i * 33));
+    expect(model.confirm(frame(1199, 2.6), 1199)).toMatchObject({ ok: true, result: { meters: 2.6, smoothedFrames: 1 } });
+  });
+
+  it('좌표계가 초기화되면 이전 프레임을 버린다', () => {
+    const model = new BaseTopMeasurement();
+    [0, .004, .002].forEach((x, i) => model.observe(baseAt(1000 + i * 33, x), 1000 + i * 33));
+    model.invalidate();
+    model.confirm(baseAt(1100, .2), 1100);
+    expect(model.getState().base!.position.x).toBe(.2);
+  });
+});
