@@ -211,3 +211,32 @@ describe('원본처럼 기준점에서 상단으로 — 모의 AR UI', () => {
     await waitFor(() => expect((screen.getByRole('button', { name: '다시 측정' }) as HTMLButtonElement).disabled).toBe(false));
   });
 });
+
+describe('여러 프레임 중간값 — 모의 AR UI, 실측 아님', () => {
+  const wall = (y: number) => frame(y, { hit: hit(y, { normalY: 0 }) });
+  it('바닥을 누르는 순간 흔들려도 직전의 안정된 바닥 화면들을 기준점으로 쓴다', async () => {
+    const { engine } = start();
+    for (let i = 0; i < 3; i += 1) { emit(engine, frame()); now += 33; }
+    emit(engine, frame(.04));
+    fireEvent.click(baseButton());
+    now += 100;
+    await confirmTop(engine);
+    expect(screen.getByText('240 cm')).toBeTruthy();
+  });
+  it('상단에 안정된 화면 여러 개를 썼으면 결과에 중간값 사용을 알린다', async () => {
+    const { engine } = start();
+    base(engine);
+    now += 100;
+    for (const y of [2.4, 2.41]) { emit(engine, wall(y)); now += 33; }
+    await confirmTop(engine, wall(2.39));
+    expect(screen.getByText('240 cm')).toBeTruthy();
+    expect(screen.getByText(/지정 직전 3개 화면의 중간값/)).toBeTruthy();
+  });
+  it('한 화면만 썼으면 중간값 안내를 보이지 않는다', async () => {
+    const { engine } = start();
+    base(engine);
+    now += 100;
+    await confirmTop(engine);
+    expect(screen.queryByText(/중간값/)).toBeNull();
+  });
+});
